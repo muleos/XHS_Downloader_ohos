@@ -2,6 +2,17 @@
   "string": [
     { "name": "module_desc", "value": "小红书笔记下载器（鸿蒙版）" },
     { "name": "perm_internet_reason", "value": "访问小红书页面以解析笔记媒体资源" },
+    { "name": "perm_background_reason", "value": "在后台继续下载任务" },
+    { "name": "detail_title", "value": "笔记详情" },
+    { "name": "detail_copy_text", "value": "复制文案" },
+    { "name": "detail_save_info_txt", "value": "TXT" },
+    { "name": "detail_save_info_md", "value": "MD" },
+    { "name": "detail_info_saved", "value": "笔记信息已保存" },
+    { "name": "detail_selected_count", "value": "全选" },
+    { "name": "detail_download_selected", "value": "下载所选" },
+    { "name": "task_state_wait_user", "value": "待选择" },
+    { "name": "task_state_partial", "value": "部分成功" },
+    { "name": "task_state_skipped", "value": "已跳过" },
 
     { "name": "common_confirm", "value": "确定" },
     { "name": "common_cancel", "value": "取消" },

@@ -13,8 +13,13 @@
       {
         "name": "ohos.permission.INTERNET",
         "reason": "$string:perm_internet_reason"
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        "reason": "$string:perm_background_reason"
       }
     ],
+    "backgroundModes": ["dataTransfer"],
     "abilities": [
       {
         "name": "EntryAbility",

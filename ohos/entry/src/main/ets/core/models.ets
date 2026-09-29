@@ -1,6 +1,18 @@
 /** Data models ported from core/model/ResolvedNote.kt and data/settings. */
 import { JsonNode } from './JsonNode';
 
+/** Port of data/settings/DownloadOptions.kt LivePhotoFormat. */
+export enum LivePhotoFormat {
+  AUTO = 0,
+  STANDARD = 1,
+  XIAOMI = 2,
+  OPLUS = 3,
+  SAMSUNG = 4,
+  VIVO = 5,
+  VIVO_LEGACY = 6,
+  HUAWEI = 7
+}
+
 export class MediaCandidate {
   url: string;
   width: number;
@@ -240,6 +252,7 @@ export class DownloadOptions {
   videoCoverDownload: boolean = false;
   commentImageDownload: boolean = false;
   livePhotoMode: LivePhotoMode = LivePhotoMode.MERGED;
+  livePhotoFormat: LivePhotoFormat = LivePhotoFormat.AUTO;
   skipExisting: boolean = false;
   authorArchive: boolean = false;
   noteArchive: boolean = false;

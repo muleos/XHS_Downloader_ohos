@@ -1,10 +1,11 @@
 /** App-wide singletons (port of app/AppContainer.kt, simplified). */
-import { Context } from '@kit.AbilityKit';
+import { Context, UIAbilityContext } from '@kit.AbilityKit';
 import { XhsHttpClient } from '../core/XhsHttpClient';
 import { XhsContentRepository } from '../core/XhsContentRepository';
 import { SettingsStore } from './SettingsStore';
 import { RecordStore } from './RecordStore';
 import { DownloadQueue } from './DownloadQueue';
+import { WebAccountRepository } from './WebAccount';
 
 export class AppContainer {
   private static inst: AppContainer | null = null;
@@ -15,6 +16,9 @@ export class AppContainer {
   settings: SettingsStore = new SettingsStore();
   records: RecordStore = new RecordStore();
   queue: DownloadQueue;
+  webAccount: WebAccountRepository = new WebAccountRepository();
+  /** Set by EntryAbility; used for the background continuous task. */
+  abilityContext: UIAbilityContext | null = null;
 
   private constructor() {
     this.repo = new XhsContentRepository(this.client);
@@ -35,7 +39,8 @@ export class AppContainer {
     await this.client.initSessionStore(context);
     await this.settings.init(context);
     await this.records.init(context);
-    this.queue.init(context);
+    await this.webAccount.init(context);
+    await this.queue.init(context, this.settings, this.records, this.repo);
     this.ready = true;
   }
 }

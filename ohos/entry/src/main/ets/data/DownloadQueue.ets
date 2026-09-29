@@ -1,305 +1,624 @@
 /**
- * Sequential download queue — simplified port of domain/download/DownloadQueue.kt.
- * v1 downloads to cacheDir temp files; the save step (gallery/files) runs after,
- * because security-component authorization (SaveButton) only covers the save call.
+ * Ported from domain/download/DownloadQueue.kt — durable task draining with
+ * 4-way media parallelism, recordKey skip, live photo composition pipeline,
+ * note text export and partial-failure preservation.
  */
-import { http } from '@kit.NetworkKit';
-import { fileIo } from '@kit.CoreFileKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { Context } from '@kit.AbilityKit';
-import { MediaFileType } from '../core/MediaFileType';
+import { fileIo } from '@kit.CoreFileKit';
+import { backgroundTaskManager } from '@kit.BackgroundTaskKit';
+import { AppContainer } from './AppContainer';
+import { SettingsStore } from './SettingsStore';
+import { RecordStore } from './RecordStore';
+import { TaskStore, DownloadTask, TaskStatus, TaskResource, ResourceState, TaskSession } from './TaskStore';
+import { TransferEngine, TransferException, TransferredMedia } from './TransferEngine';
+import { MediaSaver, StoredOutput } from './MediaSaver';
+import { LivePhotoComposer } from '../core/LivePhotoComposer';
+import { NoteOutput } from '../core/NoteOutput';
+import { XhsContentRepository } from '../core/XhsContentRepository';
+import { AppSettings, DownloadOptions, ResolvedNote, ResolvedNoteItem, LivePhotoMode, DownloadRecord } from '../core/models';
 import { XhsHttpClient } from '../core/XhsHttpClient';
-import { NamingFormat } from '../core/NamingFormat';
-import { ResolvedNote } from '../core/models';
+import { XhsUrlParser } from '../core/XhsUrlParser';
+import { MediaFileType } from '../core/MediaFileType';
+import { wantAgent } from '@kit.AbilityKit';
 
-export enum TaskState {
-  PENDING = 0,
-  RUNNING = 1,
-  DONE = 2,
-  FAILED = 3,
-  CANCELLED = 4
-}
-
-export class QueueItem {
-  id: number;
-  url: string;
-  isVideo: boolean;
-  displayName: string;
-  mediaId: string;
-  state: TaskState = TaskState.PENDING;
-  totalBytes: number = 0;
-  receivedBytes: number = 0;
+export class QueueListenerState {
+  tasks: DownloadTask[] = [];
   speedBps: number = 0;
-  error: string = '';
-  tempPath: string = '';
-
-  constructor(id: number, url: string, isVideo: boolean, displayName: string, mediaId: string) {
-    this.id = id;
-    this.url = url;
-    this.isVideo = isVideo;
-    this.displayName = displayName;
-    this.mediaId = mediaId;
-  }
-}
-
-export class QueueSnapshot {
-  items: QueueItem[] = [];
   running: boolean = false;
 }
 
-type QueueListener = (snapshot: QueueSnapshot) => void;
-
 export class DownloadQueue {
-  private items: QueueItem[] = [];
-  private running: boolean = false;
-  private cancelled: Set<number> = new Set();
-  private inFlight: http.HttpRequest | null = null;
-  private listeners: QueueListener[] = [];
-  private nextId: number = 1;
-
-  private client: XhsHttpClient;
+  private client: XhsHttpClient | null = null;
+  private store: TaskStore = new TaskStore();
+  private records: RecordStore | null = null;
+  private settings: SettingsStore | null = null;
+  private repo: XhsContentRepository | null = null;
+  private saver: MediaSaver = new MediaSaver();
   private context: Context | null = null;
+  private listeners: Array<(state: QueueListenerState) => void> = [];
+  private draining = false;
+  private cancelledResources: Set<string> = new Set<string>();
+  private paused: boolean = false;
+  private lastSpeed = 0;
 
   constructor(client: XhsHttpClient) {
     this.client = client;
   }
 
-  init(context: Context): void {
+  async init(context: Context, settings: SettingsStore, records: RecordStore, repo: XhsContentRepository): Promise<void> {
     this.context = context;
+    this.settings = settings;
+    this.records = records;
+    this.repo = repo;
+    await this.store.init(context);
   }
 
-  onChange(listener: QueueListener): void {
+  get tasks(): TaskStore {
+    return this.store;
+  }
+
+  onChange(listener: (state: QueueListenerState) => void): void {
     this.listeners.push(listener);
+    this.notify();
   }
 
   private notify(): void {
-    const snap = new QueueSnapshot();
-    snap.items = this.items;
-    snap.running = this.running;
-    for (const l of this.listeners) {
-      l(snap);
+    const state = new QueueListenerState();
+    state.tasks = this.store.all();
+    state.speedBps = this.lastSpeed;
+    state.running = this.draining;
+    for (const listener of this.listeners) {
+      listener(state);
     }
   }
 
-  count(): number {
-    return this.items.length;
-  }
-
-  /** Enqueue every unresolved media of a note; skips URLs already queued. */
-  enqueueNote(note: ResolvedNote, template: string, includeCommentImages: boolean): number {
-    let added = 0;
-    const entries: Array<[string, boolean, string]> = [];
-    let index = 0;
-    const total = note.items.length;
-    for (const item of note.items) {
-      index++;
-      if (item.live !== null) {
-        entries.push([item.live.image.sourceUrl, false,
-          NamingFormat.render(template, note, index - 1, total, 'jpg')]);
-        entries.push([item.live.video.sourceUrl, true,
-          NamingFormat.render(template, note, index - 1, total, 'mp4')]);
-      } else if (item.image !== null) {
-        entries.push([item.image.sourceUrl, false,
-          NamingFormat.render(template, note, index - 1, total, 'jpg')]);
-      } else if (item.video !== null) {
-        entries.push([item.video.sourceUrl, true,
-          NamingFormat.render(template, note, index - 1, total, 'mp4')]);
-      }
-    }
-    for (const entry of entries) {
-      if (!includeCommentImages && entry[2].indexOf('comment') >= 0) {
-        continue;
-      }
-      if (this.hasUrl(entry[0])) {
-        continue;
-      }
-      const qi = new QueueItem(this.nextId++, entry[0], entry[1], entry[2], note.noteId);
-      this.items.push(qi);
-      added++;
+  /** Enqueue raw share text (single or multi-link). */
+  enqueue(rawInput: string, infoOnly: boolean = false): number[] {
+    const links = this.linksFrom(rawInput);
+    const ids: number[] = [];
+    for (const link of links) {
+      const task = this.store.create(link);
+      task.session.rawInput = link;
+      task.session.infoOnly = infoOnly;
+      task.session.options = this.currentOptions();
+      this.store.touch(task);
+      ids.push(task.id);
     }
     this.notify();
-    return added;
+    this.drain();
+    return ids;
   }
 
-  hasUrl(url: string): boolean {
-    for (const item of this.items) {
-      if (item.url === url) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /** Enqueue a single media entry from the Detail page selection. */
-  add(url: string, isVideo: boolean, displayName: string, mediaId: string): boolean {
-    return this.pushOne(url, isVideo, displayName, mediaId);
-  }
-
-  private pushOne(url: string, isVideo: boolean, displayName: string, mediaId: string): boolean {
-    if (this.hasUrl(url)) {
-      return false;
-    }
-    this.items.push(new QueueItem(this.nextId++, url, isVideo, displayName, mediaId));
+  /** Enqueue a resolved note for selective download (Detail page). */
+  enqueueForSelection(note: ResolvedNote): number {
+    const task = this.store.create(note.canonicalUrl);
+    task.session.rawInput = note.canonicalUrl;
+    task.session.options = this.currentOptions();
+    task.session.resolvedJson = JSON.stringify(note.toBundle());
+    task.session.requireSelection = true;
+    task.noteTitle = note.title;
+    task.noteType = note.type;
+    task.status = TaskStatus.WAITING_FOR_USER;
+    this.store.touch(task);
     this.notify();
-    return true;
+    return task.id;
   }
 
-  clearFinished(): void {
-    this.items = this.items.filter((i: QueueItem): boolean =>
-      i.state !== TaskState.DONE && i.state !== TaskState.CANCELLED && i.state !== TaskState.FAILED);
-    this.notify();
-  }
-
-  cancel(id: number): void {
-    const item = this.byId(id);
-    if (item === null) {
+  confirmSelection(taskId: number, selected: number[]): void {
+    const task = this.store.byId(taskId);
+    if (task === null) {
       return;
     }
-    if (item.state === TaskState.RUNNING) {
-      this.cancelled.add(id);
-      if (this.inFlight !== null) {
-        this.inFlight.destroy();
-        this.inFlight = null;
-      }
-      item.state = TaskState.CANCELLED;
-    } else if (item.state === TaskState.PENDING) {
-      item.state = TaskState.CANCELLED;
+    task.session.selected = selected;
+    task.session.requireSelection = false;
+    task.status = TaskStatus.QUEUED;
+    this.store.touch(task);
+    this.notify();
+    this.drain();
+  }
+
+  cancel(taskId: number): void {
+    const task = this.store.byId(taskId);
+    if (task === null) {
+      return;
     }
+    for (const res of task.resources) {
+      if (res.state === ResourceState.DOWNLOADING) {
+        this.cancelledResources.add(task.id + '/' + res.mediaId);
+      }
+    }
+    task.status = TaskStatus.CANCELLED;
+    task.active = false;
+    this.store.touch(task);
     this.notify();
   }
 
-  retry(id: number): void {
-    const item = this.byId(id);
-    if (item !== null && (item.state === TaskState.FAILED || item.state === TaskState.CANCELLED)) {
-      item.state = TaskState.PENDING;
-      item.error = '';
-      item.receivedBytes = 0;
+  pause(taskId: number): void {
+    const task = this.store.byId(taskId);
+    if (task === null) {
+      return;
+    }
+    if (task.status === TaskStatus.DOWNLOADING || task.status === TaskStatus.RESOLVING ||
+      task.status === TaskStatus.QUEUED) {
+      task.status = TaskStatus.PAUSED;
+      task.active = false;
+      for (const res of task.resources) {
+        if (res.state === ResourceState.DOWNLOADING) {
+          this.cancelledResources.add(task.id + '/' + res.mediaId);
+        }
+      }
+      this.store.touch(task);
       this.notify();
-      this.start(this.useWebSessionFlag, this.timeoutSecondsFlag);
     }
   }
 
-  private useWebSessionFlag: boolean = true;
-  private timeoutSecondsFlag: number = 45;
-
-  async start(useWebSession: boolean, timeoutSeconds: number): Promise<void> {
-    if (this.running) {
+  resume(taskId: number): void {
+    const task = this.store.byId(taskId);
+    if (task === null) {
       return;
     }
-    this.useWebSessionFlag = useWebSession;
-    this.timeoutSecondsFlag = timeoutSeconds;
-    this.running = true;
-    this.notify();
-    for (const item of this.items) {
-      if (item.state !== TaskState.PENDING) {
-        continue;
-      }
-      await this.runOne(item);
-    }
-    this.running = false;
-    this.notify();
-  }
-
-  private async runOne(item: QueueItem): Promise<void> {
-    item.state = TaskState.RUNNING;
-    item.error = '';
-    this.notify();
-    if (this.context === null) {
-      item.state = TaskState.FAILED;
-      item.error = 'no context';
+    if (task.status === TaskStatus.PAUSED) {
+      task.status = TaskStatus.QUEUED;
+      this.store.touch(task);
       this.notify();
+      this.drain();
+    }
+  }
+
+  retry(taskId: number): void {
+    const task = this.store.byId(taskId);
+    if (task === null) {
       return;
     }
-    const tempPath = this.context.cacheDir + '/dl_' + item.id + '.bin';
-    item.tempPath = tempPath;
+    for (const res of task.resources) {
+      if (res.state === ResourceState.FAILED) {
+        res.state = ResourceState.DOWNLOADING;
+      }
+    }
+    task.status = task.resources.length > 0 ? TaskStatus.DOWNLOADING : TaskStatus.QUEUED;
+    task.errorMessage = '';
+    this.store.touch(task);
+    this.notify();
+    this.drain();
+  }
+
+  private linksFrom(rawInput: string): string[] {
+    return XhsUrlParser.extractLinks(rawInput);
+  }
+
+  private currentOptions(): DownloadOptions {
+    const s: AppSettings = this.settings !== null ? this.settings.get() : new AppSettings();
+    return s.downloadOptions;
+  }
+
+  private async startBackground(): Promise<void> {
     try {
-      const file = fileIo.openSync(tempPath,
-        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      const client = http.createHttp();
-      this.inFlight = client;
-      const options: http.HttpRequestOptions = {
-        method: http.RequestMethod.GET,
-        header: {
-          'User-Agent': XhsHttpClient.USER_AGENT,
-          'Referer': 'https://www.xiaohongshu.com/'
-        } as Record<string, string>,
-        connectTimeout: this.timeoutSecondsFlag * 1000,
-        readTimeout: this.timeoutSecondsFlag * 1000,
-        usingCache: false
-      };
-      const cookie = this.client.cookieHeaderFor(item.url, this.useWebSessionFlag);
-      if (cookie.length > 0) {
-        (options.header as Record<string, string>)['Cookie'] = cookie;
-      }
-      let offset = 0;
-      let lastTick = Date.now();
-      let lastBytes = 0;
-      await new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
-        client.on('headersReceive', (headers: Record<string, string>) => {
-          const lengthHeader = headers['content-length'] !== undefined ? headers['content-length'] : headers['Content-Length'];
-          if (lengthHeader !== undefined) {
-            item.totalBytes = Number(lengthHeader);
-          }
-        });
-        client.on('dataReceive', (chunk: ArrayBuffer) => {
-          if (this.cancelled.has(item.id)) {
-            return;
-          }
-          fileIo.writeSync(file.fd, chunk, { offset: offset, length: chunk.byteLength });
-          offset += chunk.byteLength;
-          item.receivedBytes = offset;
-          const now = Date.now();
-          if (now - lastTick > 500) {
-            item.speedBps = Math.round((offset - lastBytes) * 1000 / Math.max(1, now - lastTick));
-            lastTick = now;
-            lastBytes = offset;
-            this.notify();
-          }
-        });
-        client.on('dataEnd', () => {
-          resolve();
-        });
-        client.requestInStream(item.url, options).catch((e: BusinessError) => {
-          reject(new Error(e.message !== undefined ? e.message : 'stream error'));
-        });
-      });
-      if (this.cancelled.has(item.id)) {
-        fileIo.closeSync(file.fd);
-        fileIo.unlinkSync(tempPath);
-        item.tempPath = '';
-        this.notify();
+      const ctx = AppContainer.get().abilityContext;
+      if (ctx === null) {
         return;
       }
-      fileIo.closeSync(file.fd);
-      // Sniff the real type; correct the extension when the CDN lies.
-      const probe = fileIo.readSync(file.fd, new ArrayBuffer(64));
-      const detected = MediaFileType.detect(probe.buffer);
-      if (detected !== null) {
-        const dot = item.displayName.lastIndexOf('.');
-        const base = dot > 0 ? item.displayName.substring(0, dot) : item.displayName;
-        item.displayName = base + '.' + detected.extension;
-      }
-      item.state = TaskState.DONE;
-      this.notify();
+      const info: wantAgent.WantAgentInfo = {
+        wants: [{ bundleName: 'com.neoruaa.xhsdn.ohos', abilityName: 'EntryAbility' }],
+        operationType: wantAgent.OperationType.START_ABILITY,
+        requestCode: 0,
+        wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+      };
+      const agent = await wantAgent.getWantAgent(info);
+      await backgroundTaskManager.startBackgroundRunning(ctx, backgroundTaskManager.RequestType.DATA_TRANSFER, agent);
     } catch (e) {
-      if (this.cancelled.has(item.id)) {
-        item.state = TaskState.CANCELLED;
-      } else {
-        item.state = TaskState.FAILED;
-        item.error = e instanceof Error ? e.message : String(e);
-      }
-      this.notify();
-    } finally {
-      this.inFlight = null;
+      // Best-effort: in-app download still works without the continuous task.
     }
   }
 
-  private byId(id: number): QueueItem | null {
-    for (const item of this.items) {
-      if (item.id === id) {
-        return item;
+  private async stopBackground(): Promise<void> {
+    try {
+      const ctx = AppContainer.get().abilityContext;
+      if (ctx === null) {
+        return;
+      }
+      await backgroundTaskManager.stopBackgroundRunning(ctx);
+    } catch (e) {
+    }
+  }
+
+  private async drain(): Promise<void> {
+    if (this.draining) {
+      return;
+    }
+    this.draining = true;
+    this.notify();
+    await this.startBackground();
+    try {
+      while (true) {
+        const task = this.nextQueued();
+        if (task === null) {
+          break;
+        }
+        await this.runTask(task);
+      }
+    } finally {
+      this.draining = false;
+      this.lastSpeed = 0;
+      await this.stopBackground();
+      this.notify();
+    }
+  }
+
+  private nextQueued(): DownloadTask | null {
+    for (const task of this.store.all()) {
+      if (task.status === TaskStatus.QUEUED || task.status === TaskStatus.DOWNLOADING ||
+        task.status === TaskStatus.RESOLVING) {
+        return task;
       }
     }
     return null;
+  }
+
+  private async runTask(task: DownloadTask): Promise<void> {
+    const app = AppContainer.get();
+    const options: DownloadOptions = task.session.options !== null ? task.session.options : this.currentOptions();
+    task.active = true;
+    try {
+      // 1) Resolve if needed.
+      let note = this.store.loadNote(task);
+      if (note === null) {
+        task.status = TaskStatus.RESOLVING;
+        this.store.touch(task);
+        this.notify();
+        note = await this.repo.resolve(task.noteUrl, options.useWebSession, options.timeoutSeconds);
+        task.session.resolvedJson = JSON.stringify(note.toBundle());
+        task.noteTitle = note.title;
+        task.noteType = note.type;
+      }
+      task.noteTitle = note.title.length > 0 ? note.title : note.noteId;
+
+      // 2) Note text only / text export.
+      const remark = this.store.remark(note.authorId);
+      const folders = NoteOutput.folders(note, options, remark);
+      if (task.session.infoOnly) {
+        await this.saveTextOutputs(task, note, folders, options);
+        task.status = TaskStatus.COMPLETED;
+        this.store.touch(task);
+        this.records.add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'info', Date.now()));
+        return;
+      }
+
+      // 3) Build resource plan.
+      if (task.resources.length === 0) {
+        task.resources = this.planResources(task, note, options);
+        task.totalFiles = task.resources.length;
+        this.store.touch(task);
+      }
+      if (task.resources.length === 0) {
+        task.status = TaskStatus.FAILED;
+        task.errorMessage = 'no media';
+        this.store.touch(task);
+        this.notify();
+        return;
+      }
+
+      // 4) Transfer with 4-way parallelism.
+      task.status = TaskStatus.DOWNLOADING;
+      this.store.touch(task);
+      this.notify();
+      const cacheDir = this.context.cacheDir + '/xhsdn/' + task.id;
+      await this.transferAll(task, note, options, cacheDir, folders);
+
+      // 5) Publish results (skipped/completed already recorded inside transferAll).
+      let completed = 0;
+      let failed = 0;
+      let skipped = 0;
+      for (const res of task.resources) {
+        if (res.state === ResourceState.COMPLETED) {
+          completed++;
+        } else if (res.state === ResourceState.SKIPPED) {
+          skipped++;
+        } else if (res.state === ResourceState.FAILED) {
+          failed++;
+        }
+      }
+      this.records.add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'downloaded', Date.now()));
+      if (failed === 0) {
+        task.status = completed === 0 && skipped > 0 ? TaskStatus.SKIPPED : TaskStatus.COMPLETED;
+      } else if (completed + skipped > 0) {
+        task.status = TaskStatus.PARTIAL;
+      } else {
+        task.status = TaskStatus.FAILED;
+        task.errorMessage = 'all resources failed';
+      }
+      this.store.touch(task);
+    } catch (e) {
+      task.active = false;
+      task.errorMessage = e instanceof Error ? e.message : String(e);
+      if (e instanceof TransferException && (e as TransferException).reason === 2) {
+        task.status = TaskStatus.FAILED;
+      } else {
+        task.status = TaskStatus.FAILED;
+      }
+      this.store.touch(task);
+    } finally {
+      task.active = false;
+      this.store.touch(task);
+      this.notify();
+    }
+  }
+
+  private planResources(task: DownloadTask, note: ResolvedNote, options: DownloadOptions): TaskResource[] {
+    const settings: AppSettings = this.settings.get();
+    const resources: TaskResource[] = [];
+    const folders = NoteOutput.folders(note, options, this.store.remark(note.authorId));
+    const forSelection = task.session.requireSelection || task.session.selected.length > 0;
+    for (let i = 0; i < note.items.length; i++) {
+      const item = note.items[i];
+      if (forSelection) {
+        if (task.session.selected.indexOf(i) < 0) {
+          continue;
+        }
+      } else if (!NoteOutput.isEligibleItem(note, i, options, false)) {
+        continue;
+      }
+      const mediaId = NoteOutput.mediaKey(note, i);
+      const key = NoteOutput.recordKey(note.noteId, mediaId, settings, folders);
+      const baseName = NoteOutput.fileName(note, settings, i, 'jpg', Date.now());
+      if (options.skipExisting && this.store.hasCompletedKey(key)) {
+        const skipped = new TaskResource();
+        skipped.mediaId = mediaId;
+        skipped.recordKey = key;
+        skipped.name = baseName;
+        skipped.state = ResourceState.SKIPPED;
+        resources.push(skipped);
+        continue;
+      }
+      if (item.kind === 'image' && item.image !== null) {
+        const r = new TaskResource();
+        r.mediaId = mediaId;
+        r.recordKey = key;
+        r.ext = 'jpg';
+        r.name = baseName;
+        r.refsJson = JSON.stringify(NoteOutput.imageUrls(item.image, options.imageFormat));
+        resources.push(r);
+      } else if (item.kind === 'video' && item.video !== null) {
+        const r = new TaskResource();
+        r.mediaId = mediaId;
+        r.recordKey = key;
+        r.ext = 'mp4';
+        r.name = NoteOutput.fileName(note, settings, i, 'mp4', Date.now());
+        r.refsJson = JSON.stringify(NoteOutput.videoUrls(item.video, options.videoPreference));
+        resources.push(r);
+      } else if (item.kind === 'live' && item.live !== null) {
+        const r = new TaskResource();
+        r.mediaId = mediaId;
+        r.recordKey = key;
+        r.ext = 'jpg';
+        r.livePair = true;
+        r.name = baseName;
+        const urls: string[] = NoteOutput.imageUrls(item.live.image, options.imageFormat);
+        r.refsJson = JSON.stringify([urls[0], item.live.video.sourceUrl]);
+        resources.push(r);
+      }
+    }
+    return resources;
+  }
+
+  private async transferAll(task: DownloadTask, note: ResolvedNote, options: DownloadOptions,
+    cacheDir: string, folders: string[]): Promise<void> {
+    const engine = new TransferEngine(cacheDir);
+    const parallel = 4;
+    const workers: Promise<void>[] = [];
+    const runWorker = async (): Promise<void> => {
+      while (true) {
+        const mine = this.claimNext(task);
+        if (mine === null) {
+          return;
+        }
+        await this.runResource(task, note, options, engine, mine, cacheDir, folders);
+      }
+    };
+    for (let w = 0; w < parallel; w++) {
+      workers.push(runWorker());
+    }
+    await Promise.all(workers);
+  }
+
+  private claimNext(task: DownloadTask): TaskResource | null {
+    for (const res of task.resources) {
+      if (res.state === ResourceState.DOWNLOADING && !res.claimed &&
+        !this.cancelledResources.has(task.id + '/' + res.mediaId)) {
+        res.claimed = true;
+        return res;
+      }
+    }
+    return null;
+  }
+
+  private async runResource(task: DownloadTask, note: ResolvedNote, options: DownloadOptions,
+    engine: TransferEngine, res: TaskResource, cacheDir: string, folders: string[]): Promise<void> {
+    if (this.cancelledResources.has(task.id + '/' + res.mediaId)) {
+      res.state = ResourceState.FAILED;
+      return;
+    }
+    try {
+      const urls = res.refsJson.length > 0 ? (JSON.parse(res.refsJson) as string[]) : [res.name];
+      const media = await engine.fetch(this.context, urls, res.mediaId + '.' + res.ext,
+        options.maxRetries, options.timeoutSeconds,
+        (received: number, total: number) => {
+          res.bytes = received;
+          this.recomputeProgress(task);
+          this.notifyThrottled();
+        },
+        () => this.cancelledResources.has(task.id + '/' + res.mediaId));
+      res.tempPath = media.path;
+      try {
+        const stored = await this.publish(task, note, options, media, res, folders);
+        res.name = stored.name;
+        res.savedUri = stored.uri;
+        this.store.markCompletedKey(res.recordKey);
+      } catch (publishError) {
+        // Gallery writes need security-component authorization; the file stays
+        // in cache until the user taps the save button (see saveCompleted()).
+        const warnings: string[] = res.warnings.length > 0 ? (JSON.parse(res.warnings) as string[]) : [];
+        warnings.push(publishError instanceof Error ? publishError.message : String(publishError));
+        res.warnings = JSON.stringify(warnings);
+      }
+      res.state = ResourceState.COMPLETED;
+    } catch (e) {
+      res.state = ResourceState.FAILED;
+      const detail = e instanceof Error ? e.message : String(e);
+      const warnings: string[] = res.warnings.length > 0 ? (JSON.parse(res.warnings) as string[]) : [];
+      warnings.push(detail);
+      res.warnings = JSON.stringify(warnings);
+    }
+    this.recomputeProgress(task);
+    this.store.touch(task);
+    this.notify();
+  }
+
+  /** Called from a SaveButton click handler — publishes cached files to the gallery. */
+  async saveCompleted(context: Context, taskId: number): Promise<number> {
+    const task = this.store.byId(taskId);
+    if (task === null) {
+      return 0;
+    }
+    const note = this.store.loadNote(task);
+    if (note === null) {
+      return 0;
+    }
+    const options = task.session.options !== null ? task.session.options : this.currentOptions();
+    const folders = NoteOutput.folders(note, options, this.store.remark(note.authorId));
+    let saved = 0;
+    for (const res of task.resources) {
+      if (res.state !== ResourceState.COMPLETED || res.savedUri.length > 0 || res.tempPath.length === 0) {
+        continue;
+      }
+      try {
+        const type = new MediaFileType(res.ext, res.ext === 'mp4' ? 'video/mp4' : 'image/jpeg');
+        const stored = await MediaSaver.storeArchived(context, res.tempPath, type, res.name,
+          folders, options, res.mediaId);
+        res.savedUri = stored.uri;
+        saved++;
+      } catch (e) {
+        break;
+      }
+    }
+    this.store.touch(task);
+    this.notify();
+    return saved;
+  }
+
+  private async publish(task: DownloadTask, note: ResolvedNote, options: DownloadOptions,
+    media: TransferredMedia, res: TaskResource, folders: string[]): Promise<StoredOutput> {
+    if (res.livePair) {
+      return this.publishLivePhoto(task, note, options, media, res, folders);
+    }
+    return MediaSaver.storeArchived(this.context, media.path, media.type, res.name,
+      folders, options, res.mediaId);
+  }
+
+  private async publishLivePhoto(task: DownloadTask, note: ResolvedNote, options: DownloadOptions,
+    media: TransferredMedia, res: TaskResource, folders: string[]): Promise<StoredOutput> {
+    const plan = JSON.parse(res.refsJson) as string[];
+    const imageUrl = plan[0];
+    const videoUrl = plan[1];
+    const cacheDir = this.context.cacheDir + '/xhsdn/' + task.id;
+    const engine = new TransferEngine(cacheDir);
+    const baseName = res.name.replace(/\.[a-z0-9]+$/i, '');
+    const mode = options.livePhotoMode;
+    const warning = 'livephoto_fallback_separate';
+    if (mode === LivePhotoMode.STILL) {
+      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_still_in.jpg',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      return MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type, baseName + '.jpg',
+        folders, options, res.mediaId);
+    }
+    if (mode === LivePhotoMode.SEPARATE) {
+      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_img_in.jpg',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_vid_in.mp4',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const imgOut = await MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type,
+        baseName + '.jpg', folders, options, res.mediaId + '_img');
+      const vidOut = await MediaSaver.storeArchived(this.context, videoMedia.path, videoMedia.type,
+        baseName + '.mp4', folders, options, res.mediaId + '_vid');
+      return imgOut;
+    }
+    // MERGED with composition + fallback to separate.
+    try {
+      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_c_in.jpg',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_c_in.mp4',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const videoSize = fileIo.statSync(videoMedia.path).size;
+      const imgFd = fileIo.openSync(imageMedia.path, fileIo.OpenMode.READ_ONLY);
+      const imgBuf = fileIo.readSync(imgFd.fd, new ArrayBuffer(fileIo.statSync(imageMedia.path).size));
+      fileIo.closeSync(imgFd);
+      const vidFd = fileIo.openSync(videoMedia.path, fileIo.OpenMode.READ_ONLY);
+      const vidBuf = fileIo.readSync(vidFd.fd, new ArrayBuffer(videoSize));
+      fileIo.closeSync(vidFd);
+      const composed = await LivePhotoComposer.compose(new Uint8Array(imgBuf), new Uint8Array(vidBuf),
+        options.livePhotoFormat);
+      if (composed.outputBytes === null || composed.outputBytes.length === 0) {
+        throw new Error('composition failed');
+      }
+      const outPath = cacheDir + '/' + baseName + '_live.jpg';
+      const outFd = fileIo.openSync(outPath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(outFd.fd, composed.outputBytes.buffer as ArrayBuffer);
+      fileIo.closeSync(outFd);
+      const jpegType = new MediaFileType('jpg', 'image/jpeg');
+      return await MediaSaver.storeArchived(this.context, outPath, jpegType,
+        baseName + '_live.jpg', folders, options, res.mediaId);
+    } catch (e) {
+      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_img_in.jpg',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_vid_in.mp4',
+        options.maxRetries, options.timeoutSeconds, () => {
+        }, () => false);
+      const imgOut = await MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type,
+        baseName + '.jpg', folders, options, res.mediaId + '_img');
+      await MediaSaver.storeArchived(this.context, videoMedia.path, videoMedia.type,
+        baseName + '.mp4', folders, options, res.mediaId + '_vid');
+      res.warnings = JSON.stringify([warning]);
+      return imgOut;
+    }
+  }
+
+  private async saveTextOutputs(task: DownloadTask, note: ResolvedNote, folders: string[],
+    options: DownloadOptions): Promise<void> {
+    const format = options.noteFormat;
+    if (format === 0) {
+      return;
+    }
+    const base = NoteOutput.fileName(note, this.settings.get(), 0, 'txt', Date.now());
+    if (format === 1 || format === 3) {
+      await MediaSaver.storeText(this.context, folders, base + '.txt', NoteOutput.text(note, false));
+    }
+    if (format === 2 || format === 3) {
+      await MediaSaver.storeText(this.context, folders, base + '.md', NoteOutput.text(note, true));
+    }
+  }
+
+  private recomputeProgress(task: DownloadTask): void {
+    let done = 0;
+    for (const res of task.resources) {
+      if (res.state === ResourceState.COMPLETED || res.state === ResourceState.SKIPPED) {
+        done++;
+      }
+    }
+    task.completedFiles = done;
+    task.progress = task.resources.length > 0 ? Math.floor(done * 100 / task.resources.length) : 0;
+  }
+
+  private lastNotify = 0;
+  private notifyThrottled(): void {
+    const now = Date.now();
+    if (now - this.lastNotify > 200) {
+      this.lastNotify = now;
+      this.notify();
+    }
   }
 }

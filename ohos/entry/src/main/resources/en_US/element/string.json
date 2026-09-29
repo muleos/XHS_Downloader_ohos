@@ -2,6 +2,17 @@
   "string": [
     { "name": "module_desc", "value": "XHS note downloader (HarmonyOS)" },
     { "name": "perm_internet_reason", "value": "Access note pages on Xiaohongshu to resolve media" },
+    { "name": "perm_background_reason", "value": "Continue download tasks in background" },
+    { "name": "detail_title", "value": "Note detail" },
+    { "name": "detail_copy_text", "value": "Copy text" },
+    { "name": "detail_save_info_txt", "value": "TXT" },
+    { "name": "detail_save_info_md", "value": "MD" },
+    { "name": "detail_info_saved", "value": "Note info saved" },
+    { "name": "detail_selected_count", "value": "Select all" },
+    { "name": "detail_download_selected", "value": "Download" },
+    { "name": "task_state_wait_user", "value": "Awaiting selection" },
+    { "name": "task_state_partial", "value": "Partial" },
+    { "name": "task_state_skipped", "value": "Skipped" },
 
     { "name": "common_confirm", "value": "OK" },
     { "name": "common_cancel", "value": "Cancel" },
