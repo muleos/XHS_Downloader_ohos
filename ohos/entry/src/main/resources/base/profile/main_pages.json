@@ -1,0 +1,9 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/NoteDetail",
+    "pages/Settings",
+    "pages/History",
+    "pages/WebSession"
+  ]
+}

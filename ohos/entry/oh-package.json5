@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "XHS Downloader HarmonyOS entry module",
+  "main": "",
+  "author": "neoruaa",
+  "license": "AGPL-3.0",
+  "dependencies": {}
+}

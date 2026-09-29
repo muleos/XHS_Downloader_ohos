@@ -1,0 +1,2 @@
+# Define project specific obfuscation rules (disabled by default in build-profile).
+-enable-property-obfuscation

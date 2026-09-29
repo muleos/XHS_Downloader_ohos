@@ -1,0 +1,8 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "XHS Downloader HarmonyOS version. Port of the Android app (app/) to ArkTS; see ohos/README.md.",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19"
+  }
+}
