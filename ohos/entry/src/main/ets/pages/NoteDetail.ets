@@ -10,7 +10,10 @@ import { NoteOutput } from '../core/NoteOutput';
 @Entry
 @Component
 struct NoteDetail {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @StorageLink('bottomAvoid') bottomAvoid: number = 0;
+  @StorageLink('leftAvoid') leftAvoid: number = 0;
+  @StorageLink('rightAvoid') rightAvoid: number = 0;
   @State note: ResolvedNote = new ResolvedNote();
   @State selected: boolean[] = [];
   @State taskId: number = 0;
@@ -168,6 +171,7 @@ struct NoteDetail {
       .padding({ left: 14, right: 14, bottom: this.bottomAvoid + 12, top: 8 })
       .backgroundColor(Theme.cardBg)
     }
+    .padding({ left: this.leftAvoid, right: this.rightAvoid, top: this.topAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)

@@ -6,7 +6,10 @@ import { Theme, TitleBar, toast } from '../view/Common';
 @Entry
 @Component
 struct History {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @StorageLink('bottomAvoid') bottomAvoid: number = 0;
+  @StorageLink('leftAvoid') leftAvoid: number = 0;
+  @StorageLink('rightAvoid') rightAvoid: number = 0;
   @State records: DownloadRecord[] = [];
 
   aboutToAppear(): void {
@@ -83,6 +86,7 @@ struct History {
         .scrollBar(BarState.Off)
       }
     }
+    .padding({ left: this.leftAvoid, right: this.rightAvoid, top: this.topAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)

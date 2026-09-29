@@ -28,7 +28,9 @@ export default class EntryAbility extends UIAbility {
       const sys = mainWin.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       const nav = mainWin.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
       AppStorage.setOrCreate('topAvoid', sys.topRect.height);
-      AppStorage.setOrCreate('bottomAvoid', Math.max(nav.bottomRect.height, 0));
+      AppStorage.setOrCreate('bottomAvoid', Math.max(nav.bottomRect.height, sys.bottomRect.height));
+      AppStorage.setOrCreate('leftAvoid', Math.max(sys.leftRect.width, 0));
+      AppStorage.setOrCreate('rightAvoid', Math.max(sys.rightRect.width, 0));
       mainWin.setWindowSystemBarProperties({
         statusBarContentColor: '#000000'
       });

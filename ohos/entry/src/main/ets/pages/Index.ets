@@ -12,6 +12,8 @@ import { XhsResolveException, ResolveFailure } from '../core/XhsContentRepositor
 struct Index {
   @StorageLink('topAvoid') topAvoid: number = 0;
   @StorageLink('bottomAvoid') bottomAvoid: number = 0;
+  @StorageLink('leftAvoid') leftAvoid: number = 0;
+  @StorageLink('rightAvoid') rightAvoid: number = 0;
   @State input: string = '';
   @State batchMode: boolean = false;
   @State resolving: boolean = false;
@@ -155,6 +157,7 @@ struct Index {
         this.readClipboardAndPrefill();
       })
     }
+    .padding({ left: this.leftAvoid, right: this.rightAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)

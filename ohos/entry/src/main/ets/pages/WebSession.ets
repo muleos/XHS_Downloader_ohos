@@ -10,6 +10,8 @@ const SESSION_HOST: string = 'www.xiaohongshu.com';
 struct WebSession {
   @StorageLink('topAvoid') topAvoid: number = 0;
   @StorageLink('bottomAvoid') bottomAvoid: number = 0;
+  @StorageLink('leftAvoid') leftAvoid: number = 0;
+  @StorageLink('rightAvoid') rightAvoid: number = 0;
   controller: webview.WebviewController = new webview.WebviewController();
 
   build() {
@@ -45,6 +47,7 @@ struct WebSession {
           // Attach web cookies into the session store on first sight.
         })
     }
+    .padding({ left: this.leftAvoid, right: this.rightAvoid, top: this.topAvoid, bottom: this.bottomAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)
