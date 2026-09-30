@@ -3,9 +3,9 @@ import { promptAction, router } from '@kit.ArkUI';
 
 export class Theme {
   static readonly red: string = '#FF2442';
-  /** VHome 主题蓝：底栏选中态 / 主操作按钮。 */
-  static readonly blue: string = '#4C6EF5';
-  static readonly blueLight: string = '#E9EEFF';
+  /** 应用图标红（主题色）：底栏选中态 / 主操作按钮。 */
+  static readonly accent: string = '#FF2442';
+  static readonly accentLight: string = '#1AFF2442';
   static readonly textPrimary: string = '#E6000000';
   static readonly textSecondary: string = '#99000000';
   static readonly divider: string = '#1A000000';
@@ -26,15 +26,17 @@ export struct TitleBar {
   build() {
     Row({ space: 8 }) {
       if (this.showBack) {
-        Text('‹')
-          .fontSize(28)
-          .fontColor(Theme.textPrimary)
-          .width(40)
-          .height(40)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            router.back();
-          })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(22)
+            .fontColor([Theme.textPrimary])
+        }
+        .width(40)
+        .height(40)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => {
+          router.back();
+        })
       }
       Text(this.title)
         .fontSize(22)

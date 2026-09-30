@@ -8,7 +8,7 @@ import { Context } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { ParseResult, SavedItem, WorkType } from '../model/SaveModels';
-import { MediaParser } from './PlatformServices';
+import { MediaParser, NetProxy } from './PlatformServices';
 import { SavedStore } from '../data/SavedStore';
 
 export class MultiDownloadResult {
@@ -69,10 +69,15 @@ export class MultiDownloader {
       item.title = item.title.substring(0, 80);
     }
     item.author = parsed.author;
+    item.desc = parsed.title;
     item.sourceUrl = parsed.sourceUrl;
     item.createTime = Date.now();
     item.width = parsed.mediaWidth;
     item.height = parsed.mediaHeight;
+    if ((item.width <= 0 || item.height <= 0) && parsed.mediaItems.length > 0) {
+      item.width = parsed.mediaItems[0].width;
+      item.height = parsed.mediaItems[0].height;
+    }
     const seen: string[] = [];
     let index = 0;
     for (const media of parsed.mediaItems) {
@@ -84,6 +89,11 @@ export class MultiDownloader {
       if (path.length === 0) {
         index++;
         continue;
+      }
+      // 首个带尺寸的媒体项回填 item 尺寸（瀑布流比例用）
+      if ((item.width <= 0 || item.height <= 0) && media.width > 0 && media.height > 0) {
+        item.width = media.width;
+        item.height = media.height;
       }
       if (seen.indexOf(path) < 0) {
         seen.push(path);
@@ -103,7 +113,10 @@ export class MultiDownloader {
       }
     }
     if (item.mediaPaths.length === 0) {
-      out.message = '下载失败：所有媒体地址都不可达';
+      out.message = NetProxy.host.length > 0 ?
+        '下载失败：所有媒体地址都不可达（代理已启用但不可用，请检查代理地址）' :
+        '下载失败：所有媒体地址都不可达（海外媒体 CDN 需在设置 → 网络中配置代理并开启代理下载）';
+      out.webFallback = true;
       return out;
     }
     this.store.add(item);
@@ -111,6 +124,69 @@ export class MultiDownloader {
     out.itemId = item.id;
     out.message = `已保存 ${item.mediaPaths.length} 个文件到应用媒体库`;
     return out;
+  }
+
+  /** 按目标 host 补 Referer：X/IG CDN 拒绝无来源下载。 */
+  private static refererFor(url: string): string {
+    if (url.indexOf('twimg.com') >= 0 || url.indexOf('x.com') >= 0 || url.indexOf('twitter.com') >= 0) {
+      return 'https://x.com/';
+    }
+    if (url.indexOf('cdninstagram.com') >= 0 || url.indexOf('fbcdn.net') >= 0 ||
+      url.indexOf('instagram.com') >= 0) {
+      return 'https://www.instagram.com/';
+    }
+    if (url.indexOf('xhscdn.com') >= 0 || url.indexOf('xiaohongshu.com') >= 0) {
+      return 'https://www.xiaohongshu.com/';
+    }
+    if (url.indexOf('tiktok') >= 0 || url.indexOf('byteoversea') >= 0 || url.indexOf('tiktokcdn') >= 0) {
+      return 'https://www.tiktok.com/';
+    }
+    if (url.indexOf('douyin') >= 0 || url.indexOf('byteimg') >= 0) {
+      return 'https://www.douyin.com/';
+    }
+    return '';
+  }
+
+  /** 魔数嗅探真实格式，必要时修正文件扩展名（X 图床可能回 webp）。 */
+  private static fixExtension(path: string, buf: ArrayBuffer): string {
+    try {
+      const head = new Uint8Array(buf, 0, Math.min(16, buf.byteLength));
+      let ext = '';
+      if (head.length >= 3 && head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF) {
+        ext = 'jpg';
+      } else if (head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E &&
+        head[3] === 0x47) {
+        ext = 'png';
+      } else if (head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 &&
+        head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 &&
+        head[11] === 0x50) {
+        ext = 'webp';
+      } else if (head.length >= 8 && head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 &&
+        head[7] === 0x70) {
+        ext = 'mp4';
+      } else if (head.length >= 3 && head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) {
+        ext = 'gif';
+      } else {
+        return path;
+      }
+      const dot = path.lastIndexOf('.');
+      const currentExt = dot > 0 ? path.substring(dot + 1).toLowerCase() : '';
+      if (currentExt === ext || ext.length === 0) {
+        return path;
+      }
+      const newPath = (dot > 0 ? path.substring(0, dot) : path) + '.' + ext;
+      try {
+        if (fileIo.accessSync(newPath)) {
+          fileIo.unlinkSync(newPath);
+        }
+        fileIo.renameSync(path, newPath);
+        return newPath;
+      } catch (e) {
+        return path;
+      }
+    } catch (e) {
+      return path;
+    }
   }
 
   private static async downloadTo(url: string, dir: string, fileName: string): Promise<string> {
@@ -122,11 +198,17 @@ export class MultiDownloader {
           '(KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
         'Accept': '*/*'
       };
+      const referer = MultiDownloader.refererFor(url);
+      if (referer.length > 0) {
+        header['Referer'] = referer;
+      }
       const opt: http.HttpRequestOptions = {
         method: http.RequestMethod.GET,
         header: header,
         expectDataType: http.HttpDataType.ARRAY_BUFFER,
         usingCache: false,
+        // X/IG 等海外 CDN 需要代理才能下载（设置页「代理下载」开关）
+        usingProxy: NetProxy.option(),
         connectTimeout: 15000,
         readTimeout: 120000
       };
@@ -141,7 +223,7 @@ export class MultiDownloader {
         const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
         fileIo.writeSync(file.fd, buf);
         fileIo.closeSync(file.fd);
-        return path;
+        return MultiDownloader.fixExtension(path, buf);
       }
       return '';
     } catch (e) {

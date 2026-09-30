@@ -396,12 +396,13 @@ export class DownloadQueue {
       const item = new SavedItem();
       item.id = 'xhs_' + note.noteId + '_' + task.id;
       item.platform = Platform.XHS;
-      item.workType = note.type === 'video' ? WorkType.VIDEO : WorkType.IMAGES;
+      item.workType = note.type === 'video' || note.videos.length > 0 ? WorkType.VIDEO : WorkType.IMAGES;
       item.title = note.title.length > 0 ? note.title : note.noteId;
       if (item.title.length > 80) {
         item.title = item.title.substring(0, 80);
       }
       item.author = note.authorName;
+      item.desc = note.body.length > 0 ? note.body : note.description;
       item.sourceUrl = note.canonicalUrl;
       item.createTime = Date.now();
       const seen: string[] = [];

@@ -43,7 +43,10 @@ export class MediaFileType {
     if (textAt(0, 4) === 'RIFF' && textAt(8, 4) === 'WEBP') {
       return new MediaFileType('webp', 'image/webp');
     }
-    if (starts([0x00, 0x00, 0x00, 0x00]) && textAt(4, 4) === 'ftyp') {
+    // MP4 开头 4 字节是首个 box 的大小（如 00 00 00 18），不能要求全零；
+    // 旧写法 starts([0,0,0,0]) 对所有真实 MP4 恒为 false → 视频全部被误判
+    // 为 unknown signature → 整个视频资源下载失败（v1.15.0 修复）。
+    if (textAt(4, 4) === 'ftyp') {
       const brand = textAt(8, 4).toLowerCase();
       if (brand.startsWith('qt')) {
         return new MediaFileType('mov', 'video/quicktime');

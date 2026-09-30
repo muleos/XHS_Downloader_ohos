@@ -7,7 +7,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { picker, fileIo, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { dataSharePredicates } from '@kit.ArkData';
-import { Context } from '@kit.AbilityKit';
+import { abilityAccessCtrl, common, Context } from '@kit.AbilityKit';
 import { MediaFileType } from '../core/MediaFileType';
 import { DownloadOptions } from '../core/models';
 
@@ -69,24 +69,63 @@ export class MediaSaver {
   }
 
   /**
-   * Publish a batch of cached files to the gallery via the system creation
-   * dialog (user confirms once per chunk; no prior permission needed).
-   * Returns the number of assets actually created. Large batches are chunked
-   * because the dialog rejects oversized URI lists; on chunk failure the
-   * remaining files are retried one dialog per file.
+   * Publish a batch of cached files to the gallery.
+   * Channel 1 (preferred): request WRITE_IMAGEVIDEO once, then save silently
+   * via MediaAssetChangeRequest — no system dialog, always works when the
+   * permission is granted.
+   * Channel 2 (fallback): the system assets-creation dialog, chunked by 9.
+   * Returns the number of assets actually created.
    */
   static async storeGalleryBatch(context: Context, files: FolderSaveRequest[]): Promise<number> {
     if (files.length === 0) {
       return 0;
     }
-    const chunkSize = 9;
     let saved = 0;
-    for (let start = 0; start < files.length; start += chunkSize) {
-      const end = Math.min(start + chunkSize, files.length);
-      const chunk = files.slice(start, end);
-      saved += await MediaSaver.storeGalleryChunk(context, chunk, chunkSize > 1);
+    const remaining: FolderSaveRequest[] = [];
+    if (await MediaSaver.ensureGalleryWritePermission(context)) {
+      const helper = photoAccessHelper.getPhotoAccessHelper(context);
+      for (const f of files) {
+        try {
+          const assetUri = fileUri.getUriFromPath(f.path);
+          const isVideo = /\.(mp4|mov)$/i.test(f.name);
+          const changeRequest = isVideo
+            ? photoAccessHelper.MediaAssetChangeRequest.createVideoAssetRequest(context, assetUri)
+            : photoAccessHelper.MediaAssetChangeRequest.createImageAssetRequest(context, assetUri);
+          const dot = f.name.lastIndexOf('.');
+          changeRequest.setTitle(dot > 0 ? f.name.substring(0, dot) : f.name);
+          await helper.applyChanges(changeRequest);
+          saved++;
+        } catch (e) {
+          remaining.push(f);
+        }
+      }
+      if (remaining.length === 0) {
+        return saved;
+      }
+    } else {
+      for (const f of files) {
+        remaining.push(f);
+      }
+    }
+    // Channel 2: creation dialog (user confirms once per chunk of ≤9).
+    const chunkSize = 9;
+    for (let start = 0; start < remaining.length; start += chunkSize) {
+      const chunk = remaining.slice(start, start + chunkSize);
+      saved += await MediaSaver.storeGalleryChunk(context, chunk, remaining.length > 1);
     }
     return saved;
+  }
+
+  /** Ask the user for the gallery write permission (user_grant). */
+  private static async ensureGalleryWritePermission(context: Context): Promise<boolean> {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const result = await atManager.requestPermissionsFromUser(context as common.UIAbilityContext,
+        ['ohos.permission.WRITE_IMAGEVIDEO']);
+      return result.authResults.length > 0 && result.authResults.every((r: number): boolean => r === 0);
+    } catch (e) {
+      return false;
+    }
   }
 
   private static async storeGalleryChunk(context: Context, files: FolderSaveRequest[],

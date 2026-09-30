@@ -151,7 +151,66 @@ export class XhsNoteParser {
     result.containsVideo = note.videos.length > 0 || note.livePhotos.length > 0;
     result.originalUrlByTransformed = originals;
     result.resolved = note;
+    // 兜底：视频笔记的 state 里 stream 为空（未登录 SSR / 轻风控）时，
+    // 从整页 HTML 扫描 sns-video CDN 直链补一条视频。
+    if (result.resolved !== null && result.resolved.videos.length === 0 &&
+      result.resolved.items.length > 0 && this.looksLikeVideoNote(result.resolved)) {
+      const video = this.scrapeVideoFromHtml(html, result.resolved.noteId,
+        result.resolved.items[0].image !== null ? result.resolved.items[0].image!.previewUrl : '');
+      if (video !== null) {
+        result.resolved.videos.push(video);
+        result.resolved.items.push(ResolvedNoteItem.ofVideo(video));
+        result.containsVideo = true;
+      }
+    }
     return result;
+  }
+
+  /** 视频笔记判定：type 标记为 video，或唯一 item 是封面（cover）。 */
+  private looksLikeVideoNote(note: ResolvedNote): boolean {
+    if (note.type === 'video') {
+      return true;
+    }
+    return note.items.length === 1 && note.items[0].kind === 'image' &&
+      note.items[0].image !== null && note.items[0].image!.cover;
+  }
+
+  /** 从整页 HTML 抓取小红书视频 CDN 直链（含 \u002F 转义归一化）。 */
+  private scrapeVideoFromHtml(html: string, noteId: string, previewUrl: string): ResolvedVideo | null {
+    if (html === null || html.length === 0) {
+      return null;
+    }
+    const flat = html.replace(/\\u002F/gi, '/').replace(/\\\//g, '/');
+    const seen: string[] = [];
+    const regex = /https?:\/\/sns-video[^"'\\\s<>]+?\.(?:mp4|mov)[^"'\\\s<>]*/gi;
+    let m: RegExpExecArray | null = regex.exec(flat);
+    while (m !== null) {
+      if (seen.indexOf(m[0]) < 0) {
+        seen.push(m[0]);
+      }
+      m = regex.exec(flat);
+    }
+    // originVideoKey 形态：裸 key 拼 sns-video-bd 直链。
+    const keyRegex = /"originVideoKey"\s*:\s*"([^"\\]+)"/gi;
+    let k: RegExpExecArray | null = keyRegex.exec(flat);
+    while (k !== null) {
+      const key = k[1];
+      if (key.indexOf('http') !== 0 && key.length > 8) {
+        const url = 'https://sns-video-bd.xhscdn.com/' + key;
+        if (seen.indexOf(url) < 0) {
+          seen.push(url);
+        }
+      }
+      k = keyRegex.exec(flat);
+    }
+    if (seen.length === 0) {
+      return null;
+    }
+    const candidates: MediaCandidate[] = [];
+    for (const url of seen) {
+      candidates.push(new MediaCandidate(url, 0, 0, 0, 0, '', false, false));
+    }
+    return new ResolvedVideo(candidates[0].url, candidates[0].url, noteId + ':video_fb', previewUrl, candidates);
   }
 
   /** Preserve sibling comments when decoding a noteDetailMap entry or WebView result. */
@@ -232,7 +291,9 @@ export class XhsNoteParser {
         items.push(ResolvedNoteItem.ofImage(image));
       }
     }
-    if (mainVideo !== null && (isVideoNote || !note.has('type'))) {
+    // 视频字段只要存在就尝试解析（不再要求 type==='video'）：
+    // 部分视频笔记的 type 字段缺失或为空，旧条件会漏掉整个视频。
+    if (mainVideo !== null) {
       const distinct = this.videoCandidates(mainVideo);
       if (distinct.length > 0) {
         const preview = items.length > 0 ? this.previewOf(items[0]) : '';

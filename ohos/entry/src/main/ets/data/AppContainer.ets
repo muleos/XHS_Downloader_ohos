@@ -8,6 +8,7 @@ import { DownloadQueue } from './DownloadQueue';
 import { WebAccountRepository } from './WebAccount';
 import { SavedStore } from './SavedStore';
 import { MultiDownloader } from '../service/MultiDownloader';
+import { NetProxy } from '../service/PlatformServices';
 
 export class AppContainer {
   private static inst: AppContainer | null = null;
@@ -47,6 +48,12 @@ export class AppContainer {
     await this.webAccount.init(context);
     await this.saved.init(context);
     await this.queue.init(context, this.settings, this.records, this.repo);
+    // 设置页「代理/代理下载」→ 海外平台（X/IG/TikTok）解析与下载走代理
+    NetProxy.apply(this.settings.get().downloadOptions.proxy,
+      this.settings.get().downloadOptions.proxyDownload);
+    this.settings.onChange((s): void => {
+      NetProxy.apply(s.downloadOptions.proxy, s.downloadOptions.proxyDownload);
+    });
     this.ready = true;
   }
 }

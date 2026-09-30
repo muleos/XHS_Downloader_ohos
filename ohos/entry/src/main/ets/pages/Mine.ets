@@ -32,14 +32,16 @@ export struct MinePage {
           .fontColor(Theme.textPrimary)
           .layoutWeight(1)
         Row() {
-          Text('⚙').fontSize(20).fontColor(Theme.textPrimary)
+          SymbolGlyph($r('sys.symbol.gearshape'))
+            .fontSize(22)
+            .fontColor([Theme.textPrimary])
         }
-        .width(40)
-        .height(40)
-        .borderRadius(20)
+        .width(44)
+        .height(44)
+        .borderRadius(22)
         .backgroundColor(Theme.cardBg)
         .justifyContent(FlexAlign.Center)
-        .shadow({ radius: 6, color: 'rgba(0,0,0,0.06)', offsetY: 2 })
+        .shadow({ radius: 8, color: 'rgba(0,0,0,0.08)', offsetY: 2 })
         .onClick(() => {
           router.pushUrl({ url: 'pages/Settings' });
         })
@@ -52,7 +54,9 @@ export struct MinePage {
         Column({ space: 12 }) {
           // 概览卡片
           Row({ space: 14 }) {
-            Text('🗂').fontSize(30)
+            SymbolGlyph($r('sys.symbol.folder'))
+              .fontSize(30)
+              .fontColor([Theme.accent])
             Column({ space: 3 }) {
               Text(`${this.savedCount}`)
                 .fontSize(20)
@@ -73,25 +77,25 @@ export struct MinePage {
           // 功能列表卡片
           Column() {
             MineRow({
-              icon: '⚙',
+              symbol: $r('sys.symbol.gearshape'),
               title: '设置',
               desc: '下载、命名、会话等偏好',
               onTap: (): void => {
                 router.pushUrl({ url: 'pages/Settings' });
               }
             })
-            Divider().color(Theme.pageBg).margin({ left: 60 })
+            Divider().color(Theme.pageBg).margin({ left: 66 })
             MineRow({
-              icon: '🕘',
+              symbol: $r('sys.symbol.clock'),
               title: '下载历史',
               desc: '解析与下载记录',
               onTap: (): void => {
                 router.pushUrl({ url: 'pages/History' });
               }
             })
-            Divider().color(Theme.pageBg).margin({ left: 60 })
+            Divider().color(Theme.pageBg).margin({ left: 66 })
             MineRow({
-              icon: '🌐',
+              symbol: $r('sys.symbol.compass'),
               title: '网页登录',
               desc: '登录小红书提升解析成功率',
               onTap: (): void => {
@@ -118,42 +122,44 @@ export struct MinePage {
     .padding({ left: this.leftAvoid, right: this.rightAvoid })
     .width('100%')
     .height('100%')
-    .backgroundColor(Theme.pageBg)
   }
 }
 
 @Component
 struct MineRow {
-  icon: string = '';
+  symbol: Resource = $r('sys.symbol.gearshape');
   title: string = '';
   desc: string = '';
   onTap: () => void = (): void => {};
 
   build() {
     Row({ space: 12 }) {
-      Text(this.icon)
-        .fontSize(18)
-        .width(36)
-        .height(36)
-        .textAlign(TextAlign.Center)
-        .borderRadius(10)
-        .backgroundColor(Theme.pageBg)
+      Row() {
+        SymbolGlyph(this.symbol)
+          .fontSize(22)
+          .fontColor([Theme.textPrimary])
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(12)
+      .backgroundColor(Theme.pageBg)
+      .justifyContent(FlexAlign.Center)
       Column({ space: 2 }) {
         Text(this.title)
           .fontSize(15)
           .fontColor(Theme.textPrimary)
         Text(this.desc)
-          .fontSize(11)
+          .fontSize(12)
           .fontColor(Theme.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      Text('›')
-        .fontSize(18)
-        .fontColor(Theme.textSecondary)
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(16)
+        .fontColor([Theme.textSecondary])
     }
     .width('100%')
-    .padding(12)
+    .padding(14)
     .onClick(() => {
       this.onTap();
     })

@@ -54,6 +54,8 @@ export class SavedItem {
   platform: Platform = Platform.UNKNOWN;
   workType: WorkType = WorkType.IMAGES;
   title: string = '';
+  /** 原帖文本内容（正文；查看器底部展示） */
+  desc: string = '';
   author: string = '';
   sourceUrl: string = '';
   createTime: number = 0;
@@ -79,6 +81,7 @@ export class SavedItem {
       'platform': this.platform as Object,
       'workType': this.workType as Object,
       'title': this.title,
+      'desc': this.desc,
       'author': this.author,
       'sourceUrl': this.sourceUrl,
       'createTime': this.createTime as Object,
@@ -98,6 +101,7 @@ export class SavedItem {
       item.platform = typeof o['platform'] === 'number' ? o['platform'] as Platform : Platform.UNKNOWN;
       item.workType = typeof o['workType'] === 'number' ? o['workType'] as WorkType : WorkType.IMAGES;
       item.title = typeof o['title'] === 'string' ? o['title'] as string : '';
+      item.desc = typeof o['desc'] === 'string' ? o['desc'] as string : '';
       item.author = typeof o['author'] === 'string' ? o['author'] as string : '';
       item.sourceUrl = typeof o['sourceUrl'] === 'string' ? o['sourceUrl'] as string : '';
       item.createTime = typeof o['createTime'] === 'number' ? o['createTime'] as number : 0;

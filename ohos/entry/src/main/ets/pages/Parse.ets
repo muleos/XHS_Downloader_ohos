@@ -24,11 +24,31 @@ export struct ParsePage {
   @State resolving: boolean = false;
   @State progressText: string = '';
   @State queueState: QueueListenerState = new QueueListenerState();
+  /** 首页解析圆钮的跨页请求：非空 = 待解析的分享文本 */
+  @StorageLink('parseRequest') @Watch('onParseRequest') parseRequest: string = '';
 
   aboutToAppear(): void {
     AppContainer.get().queue.onChange((state: QueueListenerState) => {
       this.queueState = state;
     });
+    // 首次挂载（懒加载 TabContent）时消费已 pending 的解析请求
+    if (this.parseRequest.length > 0) {
+      this.consumeParseRequest();
+    }
+  }
+
+  onParseRequest(): void {
+    if (this.parseRequest.length > 0) {
+      this.consumeParseRequest();
+    }
+  }
+
+  private consumeParseRequest(): void {
+    const req = this.parseRequest;
+    // 先复位再解析：同样的链接下次请求仍会触发 @Watch
+    AppStorage.setOrCreate<string>('parseRequest', '');
+    this.input = req;
+    this.parse();
   }
 
   private failureMessage(e: Error): ResourceStr {
@@ -92,16 +112,20 @@ export struct ParsePage {
   }
 
   private offerWebExtract(url: string): void {
-    const isDouyin = MediaParser.detect(url) === Platform.DOUYIN;
-    const title = isDouyin ? '抖音开启了风控' : '直连解析失败';
+    const platform = MediaParser.detect(url);
+    const isDouyin = platform === Platform.DOUYIN;
+    const isXhs = platform === Platform.XHS;
+    const title = isDouyin ? '抖音开启了风控' : (isXhs ? '小红书直连受限' : '直连解析失败');
     const message = isDouyin ?
       '抖音已把作品数据改为异步加载并启用人机验证，直连请求拿不到内容。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？' :
-      '该平台对直连请求受限（网络受限或需登录）。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？';
+      isXhs ?
+        '小红书直连请求未取到作品数据（视频笔记常被风控壳页拦截）。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？' :
+        '该平台对直连请求受限（网络受限或需登录）。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？';
     promptAction.showDialog({
       title: title,
       message: message,
       buttons: [
-        { text: '网页提取', color: Theme.blue },
+        { text: '网页提取', color: Theme.accent },
         { text: '取消', color: Theme.textSecondary }
       ]
     }).then((data: promptAction.ShowDialogSuccessResponse) => {
@@ -134,6 +158,8 @@ export struct ParsePage {
       this.input = '';
     } catch (e) {
       toast(this.failureMessage(e instanceof Error ? e : new Error(String(e))));
+      // 直连被风控壳页拦截（视频笔记常见）：引导用内置浏览器内核提取
+      this.offerWebExtract(link);
     } finally {
       this.resolving = false;
     }
@@ -230,7 +256,6 @@ export struct ParsePage {
     .padding({ left: this.leftAvoid, right: this.rightAvoid })
     .width('100%')
     .height('100%')
-    .backgroundColor(Theme.pageBg)
   }
 }
 

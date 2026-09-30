@@ -140,15 +140,17 @@ struct WebExtract {
   build() {
     Column() {
       Row({ space: 8 }) {
-        Text('‹')
-          .fontSize(28)
-          .fontColor(Theme.textPrimary)
-          .width(40)
-          .height(40)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            router.back();
-          })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(22)
+            .fontColor([Theme.textPrimary])
+        }
+        .width(40)
+        .height(40)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => {
+          router.back();
+        })
         Text('网页提取')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
@@ -156,7 +158,7 @@ struct WebExtract {
           .layoutWeight(1)
         Text('重新提取')
           .fontSize(14)
-          .fontColor(Theme.blue)
+          .fontColor(Theme.accent)
           .onClick(() => {
             this.attempts = 0;
             this.extract();

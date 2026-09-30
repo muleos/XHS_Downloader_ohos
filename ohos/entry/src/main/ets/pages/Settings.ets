@@ -2,7 +2,8 @@ import { router } from '@kit.ArkUI';
 import { AppContainer } from '../data/AppContainer';
 import { MediaSaver, StoredOutput } from '../data/MediaSaver';
 import { AppSettings, VideoPreference, ImageFormat, LivePhotoMode } from '../core/models';
-import { Theme, TitleBar, SectionCard, toast } from '../view/Common';
+import { Theme, SectionCard, toast } from '../view/Common';
+import { FrostScaffold } from '../view/FrostScaffold';
 
 @Entry
 @Component
@@ -12,6 +13,8 @@ struct Settings {
   @StorageLink('leftAvoid') leftAvoid: number = 0;
   @StorageLink('rightAvoid') rightAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
+  /** 页面主滚动源（官方标题栏滚动渐变模糊绑定） */
+  private topScroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     const app = AppContainer.get();
@@ -25,81 +28,55 @@ struct Settings {
     this.settings = await AppContainer.get().settings.update(mutate);
   }
 
-  @Builder
-  selectorRow(label: ResourceStr, value: ResourceStr, onTap: () => void) {
-    Row() {
-      Text(label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
-      Text(value).fontSize(14).fontColor(Theme.red)
-      Text('›').fontSize(18).fontColor(Theme.textSecondary).margin({ left: 6 })
-    }
-    .width('100%')
-    .height(48)
-    .onClick(() => {
-      onTap();
-    })
-  }
-
-  /** 整行可点（44 高度热区），开关本身只做展示，避免与行点击重复触发。 */
-  @Builder
-  toggleRow(label: ResourceStr, on: boolean, onChange: (v: boolean) => void) {
-    Row() {
-      Text(label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: on })
-        .selectedColor(Theme.red)
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height(48)
-    .onClick(() => {
-      onChange(!on);
-      toast($r('app.string.settings_saved'));
-    })
-  }
-
-  @Builder
-  valueRow(label: ResourceStr, value: string, onChange: (v: string) => void) {
-    Row({ space: 8 }) {
-      Text(label).fontSize(15).fontColor(Theme.textPrimary).width(120)
-      TextInput({ text: value })
-        .fontSize(14)
-        .layoutWeight(1)
-        .onChange((v: string) => onChange(v))
-    }
-    .width('100%')
-    .height(48)
-  }
-
   build() {
     Column() {
-      TitleBar({ title: $r('app.string.settings_title'), showBack: true })
-
-      Scroll() {
+      // VHome 同款官方磨砂标题栏（FrostScaffold：官方材质 + 滚动渐变模糊）
+      FrostScaffold({ title: '设置', scroller: this.topScroller, bgColor: Theme.pageBg }) {
+      Scroll(this.topScroller) {
         Column({ space: 12 }) {
           SectionCard() {
             Text($r('app.string.settings_media_format'))
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.textPrimary)
-            this.selectorRow($r('app.string.settings_video_preference'), this.vpLabel(), () => {
-              this.cycleVideoPreference();
+            SelectorRow({
+              label: $r('app.string.settings_video_preference'),
+              value: this.vpLabel(),
+              onTap: (): void => {
+                this.cycleVideoPreference();
+              }
             })
-            this.selectorRow($r('app.string.settings_image_format'), this.ifLabel(), () => {
-              this.cycleImageFormat();
+            SelectorRow({
+              label: $r('app.string.settings_image_format'),
+              value: this.ifLabel(),
+              onTap: (): void => {
+                this.cycleImageFormat();
+              }
             })
-            this.toggleRow($r('app.string.settings_video_cover'), this.settings.downloadOptions.videoCoverDownload,
-              (v: boolean) => {
+            ToggleRow({
+              label: $r('app.string.settings_video_cover'),
+              on: this.settings.downloadOptions.videoCoverDownload,
+              onChange: (v: boolean): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.videoCoverDownload = v;
                 });
-              })
-            this.toggleRow($r('app.string.settings_comment_images'), this.settings.downloadOptions.commentImageDownload,
-              (v: boolean) => {
+              }
+            })
+            ToggleRow({
+              label: $r('app.string.settings_comment_images'),
+              on: this.settings.downloadOptions.commentImageDownload,
+              onChange: (v: boolean): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.commentImageDownload = v;
                 });
-              })
-            this.selectorRow($r('app.string.settings_live_photo_mode'), this.lpLabel(), () => {
-              this.cycleLiveMode();
+              }
+            })
+            SelectorRow({
+              label: $r('app.string.settings_live_photo_mode'),
+              value: this.lpLabel(),
+              onTap: (): void => {
+                this.cycleLiveMode();
+              }
             })
           }
 
@@ -108,18 +85,24 @@ struct Settings {
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.textPrimary)
-            this.valueRow($r('app.string.settings_timeout_seconds'), String(this.settings.downloadOptions.timeoutSeconds),
-              (v: string) => {
+            ValueRow({
+              label: $r('app.string.settings_timeout_seconds'),
+              value: String(this.settings.downloadOptions.timeoutSeconds),
+              onChange: (v: string): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.timeoutSeconds = Math.max(5, Math.min(300, Number(v) || 45));
                 });
-              })
-            this.valueRow($r('app.string.settings_max_retries'), String(this.settings.downloadOptions.maxRetries),
-              (v: string) => {
+              }
+            })
+            ValueRow({
+              label: $r('app.string.settings_max_retries'),
+              value: String(this.settings.downloadOptions.maxRetries),
+              onChange: (v: string): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.maxRetries = Math.max(0, Math.min(10, Number(v) || 3));
                 });
-              })
+              }
+            })
           }
 
           SectionCard() {
@@ -127,23 +110,33 @@ struct Settings {
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.textPrimary)
-            this.toggleRow($r('app.string.settings_use_web_session'), this.settings.downloadOptions.useWebSession,
-              (v: boolean) => {
+            ToggleRow({
+              label: $r('app.string.settings_use_web_session'),
+              on: this.settings.downloadOptions.useWebSession,
+              onChange: (v: boolean): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.useWebSession = v;
                 });
-              })
-            this.valueRow($r('app.string.settings_proxy'), this.settings.downloadOptions.proxy, (v: string) => {
-              this.set((s: AppSettings) => {
-                s.downloadOptions.proxy = v.trim();
-              });
+              }
             })
-            this.toggleRow($r('app.string.settings_proxy_download'), this.settings.downloadOptions.proxyDownload,
-              (v: boolean) => {
+            ValueRow({
+              label: $r('app.string.settings_proxy'),
+              value: this.settings.downloadOptions.proxy,
+              onChange: (v: string): void => {
+                this.set((s: AppSettings) => {
+                  s.downloadOptions.proxy = v.trim();
+                });
+              }
+            })
+            ToggleRow({
+              label: $r('app.string.settings_proxy_download'),
+              on: this.settings.downloadOptions.proxyDownload,
+              onChange: (v: boolean): void => {
                 this.set((s: AppSettings) => {
                   s.downloadOptions.proxyDownload = v;
                 });
-              })
+              }
+            })
           }
 
           SectionCard() {
@@ -151,18 +144,24 @@ struct Settings {
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.textPrimary)
-            this.toggleRow($r('app.string.settings_use_custom_naming'), this.settings.useCustomNamingFormat,
-              (v: boolean) => {
+            ToggleRow({
+              label: $r('app.string.settings_use_custom_naming'),
+              on: this.settings.useCustomNamingFormat,
+              onChange: (v: boolean): void => {
                 this.set((s: AppSettings) => {
                   s.useCustomNamingFormat = v;
                 });
-              })
-            this.valueRow($r('app.string.settings_naming_template'), this.settings.customNamingTemplate,
-              (v: string) => {
+              }
+            })
+            ValueRow({
+              label: $r('app.string.settings_naming_template'),
+              value: this.settings.customNamingTemplate,
+              onChange: (v: string): void => {
                 this.set((s: AppSettings) => {
                   s.customNamingTemplate = v;
                 });
-              })
+              }
+            })
             Text($r('app.string.settings_naming_tokens'))
               .fontSize(12)
               .fontColor(Theme.textSecondary)
@@ -173,8 +172,12 @@ struct Settings {
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.textPrimary)
-            this.selectorRow($r('app.string.settings_open_web_session'), '', () => {
-              router.pushUrl({ url: 'pages/WebSession' });
+            SelectorRow({
+              label: $r('app.string.settings_open_web_session'),
+              value: '',
+              onTap: (): void => {
+                router.pushUrl({ url: 'pages/WebSession' });
+              }
             })
             Button($r('app.string.settings_clear_session'), { buttonStyle: ButtonStyleMode.NORMAL })
               .onClick(() => {
@@ -218,15 +221,21 @@ struct Settings {
             Text($r('app.string.settings_about_upstream')).fontSize(12).fontColor(Theme.textSecondary)
           }
         }
-        .padding({ left: 12, right: 12, bottom: this.bottomAvoid + 24 })
+        .padding({
+          left: this.leftAvoid > 0 ? this.leftAvoid : 12,
+          right: this.rightAvoid > 0 ? this.rightAvoid : 12,
+          top: this.topAvoid + 60,
+          bottom: this.bottomAvoid + 24
+        })
       }
-      .layoutWeight(1)
       .scrollBar(BarState.Off)
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      }
     }
-    .padding({ left: this.leftAvoid, right: this.rightAvoid, top: this.topAvoid })
     .width('100%')
     .height('100%')
-    .backgroundColor(Theme.pageBg)
   }
 
   private vpLabel(): ResourceStr {
@@ -295,5 +304,75 @@ struct Settings {
     MediaSaver.storeText(getContext(this), [], name, text).then((out: StoredOutput) => {
       toast(out.skipped ? $r('app.string.error_network') : $r('app.string.common_saved'));
     });
+  }
+}
+
+/**
+ * 设置行组件（替代原 @Builder 按值传参）：
+ * 自定义组件在父组件状态变化时会同步更新入参，实现实时刷新。
+ */
+@Component
+struct SelectorRow {
+  label: ResourceStr = '';
+  value: ResourceStr = '';
+  onTap: () => void = (): void => {};
+
+  build() {
+    Row() {
+      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
+      Text(this.value).fontSize(14).fontColor(Theme.accent)
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(15)
+        .fontColor([Theme.textSecondary])
+        .margin({ left: 6 })
+    }
+    .width('100%')
+    .height(48)
+    .onClick(() => {
+      this.onTap();
+    })
+  }
+}
+
+/** 整行可点（48 高度热区），开关本身只做展示，避免与行点击重复触发。 */
+@Component
+struct ToggleRow {
+  label: ResourceStr = '';
+  on: boolean = false;
+  onChange: (v: boolean) => void = (): void => {};
+
+  build() {
+    Row() {
+      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: this.on })
+        .selectedColor(Theme.accent)
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .height(48)
+    .onClick(() => {
+      this.onChange(!this.on);
+      toast($r('app.string.settings_saved'));
+    })
+  }
+}
+
+@Component
+struct ValueRow {
+  label: ResourceStr = '';
+  value: string = '';
+  onChange: (v: string) => void = (): void => {};
+
+  build() {
+    Row({ space: 8 }) {
+      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).width(120)
+      TextInput({ text: this.value })
+        .fontSize(14)
+        .layoutWeight(1)
+        .backgroundColor(Theme.pageBg)
+        .onChange((v: string) => this.onChange(v))
+    }
+    .width('100%')
+    .height(48)
   }
 }

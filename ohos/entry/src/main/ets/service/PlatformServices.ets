@@ -9,6 +9,38 @@ import { ParseResult, ParseStatus, Platform, WorkType, MediaItem } from '../mode
 const IOS_UA: string = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 ' +
   '(KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1';
 
+/**
+ * 海外平台代理桥：设置页「代理」（host:port）+「代理下载」开关 →
+ * X / IG / TikTok 解析与媒体下载走该 HTTP 代理（ohos usingProxy）。
+ * 小红书走国内 CDN，不经过此代理（TransferEngine 不接线）。
+ * AppContainer.init 与设置变更时调用 NetProxy.apply 同步。
+ */
+export class NetProxy {
+  static host: string = '';
+  static port: number = 0;
+
+  static apply(proxyText: string, enabled: boolean): void {
+    const t = proxyText.trim();
+    const m = t.match(/^(?:https?:\/\/)?([A-Za-z0-9.\-]+):(\d{2,5})\/?$/);
+    if (enabled && t.length > 0 && m !== null) {
+      NetProxy.host = m[1] as string;
+      NetProxy.port = parseInt(m[2] as string, 10);
+    } else {
+      NetProxy.host = '';
+      NetProxy.port = 0;
+    }
+  }
+
+  /** usingProxy 取值：未启用时返回 true（跟随系统默认），启用时返回指定代理。 */
+  static option(): boolean | http.HttpProxy {
+    if (NetProxy.host.length > 0 && NetProxy.port > 0) {
+      const proxy: http.HttpProxy = { host: NetProxy.host, port: NetProxy.port, exclusionList: [] };
+      return proxy;
+    }
+    return true;
+  }
+}
+
 interface TitleAuthor {
   title: string;
   author: string;
@@ -21,7 +53,7 @@ class HttpPage {
 }
 
 class Http {
-  static async getText(url: string, ua: string, referer: string): Promise<string> {
+  static async getText(url: string, ua: string, referer: string, connectTimeout: number = 15000): Promise<string> {
     let req: http.HttpRequest | null = null;
     try {
       req = http.createHttp();
@@ -38,7 +70,8 @@ class Http {
         header: header,
         expectDataType: http.HttpDataType.STRING,
         usingCache: false,
-        connectTimeout: 15000,
+        usingProxy: NetProxy.option(),
+        connectTimeout: connectTimeout,
         readTimeout: 20000
       };
       const resp = await req.request(url, opt);
@@ -80,6 +113,7 @@ class Http {
           header: header,
           expectDataType: http.HttpDataType.STRING,
           usingCache: false,
+          usingProxy: NetProxy.option(),
           connectTimeout: 15000,
           readTimeout: 20000
         };
@@ -557,14 +591,32 @@ export class XService {
     failed.sourceUrl = url;
     failed.status = ParseStatus.PARSE_FAILED;
     failed.message = '没有解析到图文或视频内容，请确认作品公开且链接有效';
-    const id = XService.statusId(url);
+    // t.co 短链：先跟到最终 x.com 地址再取 status id。
+    // ohos http 默认自动跟跳（finalUrl 仍是原 t.co 地址），因此若正文里
+    // 出现 x.com 目标地址，直接从 HTML 提取（国内网络 t.co 本身不可达，
+    // 这里主要是配合代理环境的兜底）。
+    let target = url;
+    if (target.indexOf('t.co/') >= 0) {
+      const page = await Http.getFollow(target, IOS_UA, '', 4);
+      if (page.finalUrl.length > 0 && page.finalUrl.indexOf('t.co/') < 0) {
+        target = page.finalUrl;
+        failed.sourceUrl = target;
+      } else if (page.text.length > 0) {
+        const inner = page.text.match(/https?:\/\/(?:x|twitter)\.com\/[A-Za-z0-9_]+\/status\/(\d+)/);
+        if (inner !== null) {
+          target = inner[0];
+          failed.sourceUrl = target;
+        }
+      }
+    }
+    const id = XService.statusId(target);
     if (id.length === 0) {
       failed.message = '不是可识别的 X 作品链接';
       return failed;
     }
-    // 通道 1：fxtwitter API
+    // 通道 1：fxtwitter API（Cloudflare，国内直连可达——实测主通道）
     try {
-      const body = await Http.getText(`https://api.fxtwitter.com/status/${id}`, 'XHSDownloader/1.0', '');
+      const body = await Http.getText(`https://api.fxtwitter.com/status/${id}`, 'XHSDownloader/1.0', '', 8000);
       if (body.length > 0) {
         const mapped = XService.mapFxTwitter(body, url);
         if (mapped.status === ParseStatus.OK) {
@@ -574,9 +626,9 @@ export class XService {
     } catch (e) {
       // fallthrough
     }
-    // 通道 2：vxtwitter API（部分网络环境可达）
+    // 通道 2：vxtwitter API（国内通常不可达，快速失败 6s）
     try {
-      const body = await Http.getText(`https://api.vxtwitter.com/i/status/${id}`, IOS_UA, '');
+      const body = await Http.getText(`https://api.vxtwitter.com/i/status/${id}`, IOS_UA, '', 6000);
       if (body.length > 0) {
         const mapped = XService.mapVxTwitter(body, url);
         if (mapped.status === ParseStatus.OK) {
@@ -586,10 +638,99 @@ export class XService {
     } catch (e) {
       // fallthrough
     }
-    // 全部失败：多半是网络受限，交给网页内核提取兜底
-    failed.message = 'X 作品解析失败（镜像通道不可达或作品无媒体），可改用「网页提取」';
+    // 通道 3（SaveAny 同款兜底）：x.com 页面 og meta + 最高码率 mp4（需代理）
+    try {
+      const page = await Http.getText(`https://x.com/i/status/${id}`, IOS_UA, 'https://x.com/', 6000);
+      if (page.length > 0) {
+        const mapped = XService.mapOgMeta(page, url);
+        if (mapped.status === ParseStatus.OK) {
+          return mapped;
+        }
+      }
+    } catch (e) {
+      // fallthrough
+    }
+    // 全部失败：fxtwitter 不可达或作品无媒体。媒体下载还需代理（twimg 被墙）。
+    failed.message = 'X 解析失败：镜像通道不可达或作品无媒体。媒体下载需在「设置 → 网络」配置代理（如 127.0.0.1:7890）后开启代理下载，或改用「网页提取」';
     failed.webFallback = true;
     return failed;
+  }
+
+  /** og:title 形如「文本 (@user) on X」→ 拆出正文与作者。 */
+  static splitOgTitle(rawTitle: string): TitleAuthor {
+    const out: TitleAuthor = { title: rawTitle, author: '' };
+    const m = rawTitle.match(/^([\s\S]*?)\s+\(@([^)]+)\)\s+on X$/);
+    if (m !== null) {
+      out.title = (m[1] as string).trim();
+      out.author = (m[2] as string).trim();
+    }
+    return out;
+  }
+
+  /** bitrate 最高码率的 mp4 直链（页面嵌入的 variant 列表）。 */
+  static highestBitrateVideo(html: string): string {
+    const re = /bitrate:(\d+),content_type:"video\/mp4",url:"((?:\\.|[^"\\])*)"/g;
+    let best = '';
+    let bestBitrate = -1;
+    let m: RegExpExecArray | null = re.exec(html);
+    while (m !== null) {
+      const bitrate = parseInt(m[1] as string);
+      if (!isNaN(bitrate) && bitrate > bestBitrate) {
+        bestBitrate = bitrate;
+        best = m[2] as string;
+      }
+      m = re.exec(html);
+    }
+    return best;
+  }
+
+  /** x.com og meta 兜底：og:image 为 poster / 直图，variant 里挑最高码率 mp4。 */
+  static mapOgMeta(html: string, sourceUrl: string): ParseResult {
+    const result = new ParseResult();
+    result.platform = Platform.X;
+    result.sourceUrl = sourceUrl;
+    const title = Http.decodeHtml(XService.metaContent(html, 'og:title'));
+    const split = XService.splitOgTitle(title);
+    if (split.title.length > 0) {
+      result.title = split.title;
+    }
+    if (split.author.length > 0) {
+      result.author = split.author;
+    }
+    const image = Http.decodeHtml(XService.metaContent(html, 'og:image'));
+    const video = XService.highestBitrateVideo(html);
+    if (video.length > 0) {
+      const mi = new MediaItem();
+      mi.type = WorkType.VIDEO;
+      mi.url = video.replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+      if (image.length > 0) {
+        mi.posterUrl = image;
+      }
+      result.mediaItems.push(mi);
+      result.workType = WorkType.VIDEO;
+      result.coverUrl = mi.posterUrl;
+    } else if (image.length > 0 && image.indexOf('/photo/') < 0) {
+      const mi = new MediaItem();
+      mi.type = WorkType.IMAGES;
+      mi.url = image;
+      result.mediaItems.push(mi);
+      result.workType = WorkType.IMAGES;
+      result.coverUrl = mi.url;
+    }
+    if (result.mediaItems.length === 0) {
+      result.status = ParseStatus.PARSE_FAILED;
+      return result;
+    }
+    result.status = ParseStatus.OK;
+    return result;
+  }
+
+  static metaContent(html: string, prop: string): string {
+    const safe = prop.replace(':', '\\:');
+    const re = new RegExp('<meta[^>]+(?:property|name)="' + safe + '"[^>]+content="([^"]*)"', 'i');
+    const alt = new RegExp('<meta[^>]+content="([^"]*)"[^>]+(?:property|name)="' + safe + '"', 'i');
+    const m = re.exec(html) !== null ? re.exec(html) : alt.exec(html);
+    return m !== null ? m[1] : '';
   }
 
   /** vxtwitter 响应映射：mediaURLs 数组。 */
@@ -883,28 +1024,51 @@ export class InstagramService {
     return m !== null ? m[1] : 'p';
   }
 
+  /** 从跟跳结果页 HTML 提取 shortcode：canonical 链接 / og:url / JSON 字段。 */
+  static shortcodeFromHtml(html: string): string {
+    const m = html.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/) ||
+      html.match(/"shortcode"\s*:\s*"([A-Za-z0-9_-]+)"/) ||
+      html.match(/"short_code"\s*:\s*"([A-Za-z0-9_-]+)"/);
+    return m !== null ? m[1] : '';
+  }
+
   static async parse(url: string): Promise<ParseResult> {
     const failed = new ParseResult();
     failed.platform = Platform.INSTAGRAM;
     failed.sourceUrl = url;
     failed.status = ParseStatus.PARSE_FAILED;
     failed.message = '不是可识别的 Instagram 作品链接';
-    const code = InstagramService.shortcode(url);
+    // /share/xxx 短链与 instagr.am 先跟到最终 /p|reel|tv/ 地址。
+    // 注意 ohos http 默认自动跟跳，finalUrl 仍是原短链地址，因此
+    // shortcode 还要从跟跳结果页的 HTML 里提取（canonical / og:url / JSON）。
+    let target = url;
+    let code = InstagramService.shortcode(target);
+    if (code.length === 0) {
+      const page = await Http.getFollow(target, IOS_UA, 'https://www.instagram.com/', 4);
+      if (page.finalUrl.length > 0) {
+        target = page.finalUrl;
+        failed.sourceUrl = target;
+        code = InstagramService.shortcode(target);
+      }
+      if (code.length === 0 && page.text.length > 0) {
+        code = InstagramService.shortcodeFromHtml(page.text);
+      }
+    }
     if (code.length === 0) {
       return failed;
     }
     failed.message = '没有解析到 Instagram 作品媒体地址';
-    const embedUrl = `https://www.instagram.com/${InstagramService.postType(url)}/${code}/embed/captioned/`;
+    const embedUrl = `https://www.instagram.com/${InstagramService.postType(target)}/${code}/embed/captioned/`;
     const html = await Http.getText(embedUrl, IOS_UA, 'https://www.instagram.com/');
     if (html.length === 0) {
       // instagram.com 在国内网络通常不可达：直连失败时给出明确指引
-      failed.message = 'Instagram 无法直连（该域名在国内网络受限，或作品需登录），请开启代理后重试，或改用「网页提取」';
+      failed.message = 'Instagram 无法直连（该域名在国内网络受限，或作品需登录）。可在「设置 → 网络」配置代理（如 127.0.0.1:7890）并开启「代理下载」后重试，或改用「网页提取」';
       failed.webFallback = true;
       return failed;
     }
     const start = html.indexOf('"shortcode_media"');
     if (start < 0) {
-      const og = InstagramService.ogMeta(html, url);
+      const og = InstagramService.ogMeta(html, target);
       if (og.status !== ParseStatus.OK) {
         og.message = 'Instagram 页面未包含媒体直链（可能需登录），请开启代理后重试';
         og.webFallback = true;
@@ -914,14 +1078,41 @@ export class InstagramService {
     const brace = html.indexOf('{', start);
     const jsonText = Http.extractBalancedJson(html, brace);
     if (jsonText.length === 0) {
-      return InstagramService.ogMeta(html, url);
+      return InstagramService.ogMeta(html, target);
     }
     try {
       const media = JSON.parse(jsonText) as Record<string, Object>;
-      return InstagramService.mapShortcode(media, url);
+      return InstagramService.mapShortcode(media, target);
     } catch (e) {
-      return InstagramService.ogMeta(html, url);
+      return InstagramService.ogMeta(html, target);
     }
+  }
+
+  /** 单节点 → 媒体项（SaveAny 同款）：视频优先（display_url 作 poster），带尺寸。 */
+  static nodeToItem(node: Record<string, Object>): MediaItem | null {
+    const mi = new MediaItem();
+    const dims = node['dimensions'] as Record<string, Object>;
+    if (dims !== null && dims !== undefined) {
+      mi.width = Http.num(dims['width']);
+      mi.height = Http.num(dims['height']);
+    }
+    const videoUrl = node['video_url'];
+    if (typeof videoUrl === 'string' && (videoUrl as string).length > 0) {
+      mi.type = WorkType.VIDEO;
+      mi.url = videoUrl as string;
+      const display = node['display_url'];
+      if (typeof display === 'string') {
+        mi.posterUrl = display as string;
+      }
+      return mi;
+    }
+    const display = node['display_url'];
+    if (typeof display === 'string' && (display as string).length > 0) {
+      mi.type = WorkType.IMAGES;
+      mi.url = display as string;
+      return mi;
+    }
+    return null;
   }
 
   static mapShortcode(media: Record<string, Object>, sourceUrl: string): ParseResult {
@@ -942,37 +1133,34 @@ export class InstagramService {
     if (owner !== null && owner !== undefined && typeof owner['username'] === 'string') {
       result.author = owner['username'] as string;
     }
-    if (typeof media['display_url'] === 'string') {
-      const mi = new MediaItem();
-      mi.url = media['display_url'] as string;
-      mi.type = WorkType.IMAGES;
-      result.mediaItems.push(mi);
+    const dims = media['dimensions'] as Record<string, Object>;
+    if (dims !== null && dims !== undefined) {
+      result.mediaWidth = Http.num(dims['width']);
+      result.mediaHeight = Http.num(dims['height']);
     }
-    if (typeof media['video_url'] === 'string' && (media['video_url'] as string).length > 0) {
-      const mi = new MediaItem();
-      mi.url = media['video_url'] as string;
-      mi.type = WorkType.VIDEO;
-      result.mediaItems.unshift(mi);
-    }
+    // 多图 sidecar
     const sidecar = media['edge_sidecar_to_children'] as Record<string, Object>;
     if (sidecar !== null && sidecar !== undefined && Array.isArray(sidecar['edges'])) {
-      result.mediaItems = [];
       for (const edge of sidecar['edges'] as Array<Object>) {
         const node = (edge as Record<string, Object>)['node'] as Record<string, Object>;
         if (node === null || node === undefined) {
           continue;
         }
-        const isVideo = node['is_video'] === true;
-        const url = isVideo && typeof node['video_url'] === 'string' ? node['video_url'] as string :
-          (typeof node['display_url'] === 'string' ? node['display_url'] as string : '');
-        if (url.length === 0) {
-          continue;
+        const mi = InstagramService.nodeToItem(node);
+        if (mi !== null) {
+          result.mediaItems.push(mi);
         }
-        const mi = new MediaItem();
-        mi.url = url;
-        mi.type = isVideo ? WorkType.VIDEO : WorkType.IMAGES;
-        result.mediaItems.push(mi);
       }
+    }
+    // 单图 / 单视频
+    if (result.mediaItems.length === 0) {
+      const single = InstagramService.nodeToItem(media);
+      if (single !== null) {
+        result.mediaItems.push(single);
+      }
+    }
+    if (result.title.length === 0) {
+      result.title = 'Instagram';
     }
     if (result.mediaItems.length === 0) {
       result.status = ParseStatus.PARSE_FAILED;
@@ -980,7 +1168,8 @@ export class InstagramService {
       return result;
     }
     result.workType = result.mediaItems[0].type;
-    result.coverUrl = result.mediaItems[0].type === WorkType.VIDEO ? '' : result.mediaItems[0].url;
+    result.coverUrl = result.mediaItems[0].type === WorkType.VIDEO ?
+      result.mediaItems[0].posterUrl : result.mediaItems[0].url;
     result.status = ParseStatus.OK;
     return result;
   }
@@ -990,13 +1179,36 @@ export class InstagramService {
     result.platform = Platform.INSTAGRAM;
     result.sourceUrl = sourceUrl;
     const image = InstagramService.metaContent(html, 'og:image');
-    if (image.length > 0) {
+    const video = InstagramService.metaContent(html, 'og:video');
+    const title = InstagramService.metaContent(html, 'og:title');
+    const desc = InstagramService.metaContent(html, 'og:description');
+    if (title.length > 0) {
+      result.title = Http.decodeHtml(title);
+    } else if (desc.length > 0) {
+      result.title = Http.decodeHtml(desc);
+    } else {
+      result.title = 'Instagram';
+    }
+    if (video.length > 0) {
+      const mi = new MediaItem();
+      mi.type = WorkType.VIDEO;
+      mi.url = Http.decodeHtml(video);
+      if (image.length > 0) {
+        mi.posterUrl = Http.decodeHtml(image);
+      }
+      result.mediaItems.push(mi);
+      result.workType = WorkType.VIDEO;
+      result.coverUrl = mi.posterUrl;
+    } else if (image.length > 0) {
       const mi = new MediaItem();
       mi.url = Http.decodeHtml(image);
       mi.type = WorkType.IMAGES;
       result.mediaItems.push(mi);
-      result.status = ParseStatus.OK;
       result.workType = WorkType.IMAGES;
+      result.coverUrl = mi.url;
+    }
+    if (result.mediaItems.length > 0) {
+      result.status = ParseStatus.OK;
     }
     return result;
   }
