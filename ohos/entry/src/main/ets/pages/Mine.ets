@@ -58,7 +58,7 @@ export struct MinePage {
                 .fontSize(20)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Theme.textPrimary)
-              Text('已保存作品 · 在首页媒体库查看')
+              Text('已保存作品 · 在首页收藏中查看')
                 .fontSize(12)
                 .fontColor(Theme.textSecondary)
             }
@@ -104,7 +104,7 @@ export struct MinePage {
           .backgroundColor(Theme.cardBg)
           .clip(true)
 
-          Text('XHS Downloader HarmonyOS')
+          Text('收藏 · HarmonyOS')
             .fontSize(11)
             .fontColor(Theme.textSecondary)
             .margin({ top: 8 })

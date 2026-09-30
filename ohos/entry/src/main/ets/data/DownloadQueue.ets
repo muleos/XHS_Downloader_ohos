@@ -228,7 +228,7 @@ export class DownloadQueue {
         return;
       }
       const info: wantAgent.WantAgentInfo = {
-        wants: [{ bundleName: 'com.neoruaa.xhsdn.ohos', abilityName: 'EntryAbility' }],
+        wants: [{ bundleName: 'com.hmos.collection', abilityName: 'EntryAbility' }],
         operationType: wantAgent.OperationType.START_ABILITY,
         requestCode: 0,
         wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]

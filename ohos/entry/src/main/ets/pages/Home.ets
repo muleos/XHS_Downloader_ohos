@@ -104,7 +104,7 @@ export struct HomePage {
         // VHome 风格顶部：大标题 + 圆形按钮
         Row() {
           Column({ space: 2 }) {
-            Text('媒体库')
+            Text('收藏')
               .fontSize(26)
               .fontWeight(FontWeight.Bold)
               .fontColor(Theme.textPrimary)
