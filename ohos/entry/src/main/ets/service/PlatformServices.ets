@@ -562,6 +562,7 @@ export class XService {
       failed.message = '不是可识别的 X 作品链接';
       return failed;
     }
+    // 通道 1：fxtwitter API
     try {
       const body = await Http.getText(`https://api.fxtwitter.com/status/${id}`, 'XHSDownloader/1.0', '');
       if (body.length > 0) {
@@ -573,7 +574,62 @@ export class XService {
     } catch (e) {
       // fallthrough
     }
+    // 通道 2：vxtwitter API（部分网络环境可达）
+    try {
+      const body = await Http.getText(`https://api.vxtwitter.com/i/status/${id}`, IOS_UA, '');
+      if (body.length > 0) {
+        const mapped = XService.mapVxTwitter(body, url);
+        if (mapped.status === ParseStatus.OK) {
+          return mapped;
+        }
+      }
+    } catch (e) {
+      // fallthrough
+    }
+    // 全部失败：多半是网络受限，交给网页内核提取兜底
+    failed.message = 'X 作品解析失败（镜像通道不可达或作品无媒体），可改用「网页提取」';
+    failed.webFallback = true;
     return failed;
+  }
+
+  /** vxtwitter 响应映射：mediaURLs 数组。 */
+  static mapVxTwitter(body: string, sourceUrl: string): ParseResult {
+    const result = new ParseResult();
+    result.platform = Platform.X;
+    result.sourceUrl = sourceUrl;
+    try {
+      const root = JSON.parse(body) as Record<string, Object>;
+      if (typeof root['text'] === 'string') {
+        result.title = root['text'] as string;
+      }
+      if (typeof root['user_name'] === 'string') {
+        result.author = root['user_name'] as string;
+      }
+      const urls = root['mediaURLs'];
+      if (Array.isArray(urls)) {
+        for (const raw of urls as Array<Object>) {
+          if (typeof raw !== 'string') {
+            continue;
+          }
+          const u = raw as string;
+          const mi = new MediaItem();
+          mi.url = u;
+          const isVideo = u.indexOf('.mp4') >= 0 || u.indexOf('/video/') >= 0;
+          mi.type = isVideo ? WorkType.VIDEO : WorkType.IMAGES;
+          result.mediaItems.push(mi);
+        }
+      }
+      if (result.mediaItems.length === 0) {
+        result.status = ParseStatus.PARSE_FAILED;
+        return result;
+      }
+      result.workType = result.mediaItems[0].type;
+      result.status = ParseStatus.OK;
+      return result;
+    } catch (e) {
+      result.status = ParseStatus.PARSE_FAILED;
+      return result;
+    }
   }
 
   static mapFxTwitter(body: string, sourceUrl: string): ParseResult {
@@ -841,11 +897,19 @@ export class InstagramService {
     const embedUrl = `https://www.instagram.com/${InstagramService.postType(url)}/${code}/embed/captioned/`;
     const html = await Http.getText(embedUrl, IOS_UA, 'https://www.instagram.com/');
     if (html.length === 0) {
+      // instagram.com 在国内网络通常不可达：直连失败时给出明确指引
+      failed.message = 'Instagram 无法直连（该域名在国内网络受限，或作品需登录），请开启代理后重试，或改用「网页提取」';
+      failed.webFallback = true;
       return failed;
     }
     const start = html.indexOf('"shortcode_media"');
     if (start < 0) {
-      return InstagramService.ogMeta(html, url);
+      const og = InstagramService.ogMeta(html, url);
+      if (og.status !== ParseStatus.OK) {
+        og.message = 'Instagram 页面未包含媒体直链（可能需登录），请开启代理后重试';
+        og.webFallback = true;
+      }
+      return og;
     }
     const brace = html.indexOf('{', start);
     const jsonText = Http.extractBalancedJson(html, brace);

@@ -38,6 +38,8 @@ struct WebExtract {
   @State images: string[] = [];
   @State progress: string = '正在打开页面…';
   @State busy: boolean = false;
+  /** 页面是 SPA 时视频元素出现较晚：自动重试提取。 */
+  private attempts: number = 0;
   controller: webview.WebviewController = new webview.WebviewController();
 
   aboutToAppear(): void {
@@ -90,6 +92,14 @@ struct WebExtract {
       const t = o['title'];
       this.title = typeof t === 'string' ? t as string : '';
       this.progress = `识别到 ${vids.length} 个视频、${imgs.length} 张图片`;
+      // SPA 页面媒体元素出现晚：空结果时自动重试几次
+      if (vids.length === 0 && imgs.length === 0 && this.attempts < 5) {
+        this.attempts++;
+        this.progress = `正在等待页面渲染出媒体…（第 ${this.attempts}/5 次自动重试）`;
+        setTimeout(() => {
+          this.extract();
+        }, 2500);
+      }
     } catch (e) {
       this.progress = '页面数据解析失败，可刷新页面后重试';
     }
@@ -146,8 +156,9 @@ struct WebExtract {
           .layoutWeight(1)
         Text('重新提取')
           .fontSize(14)
-          .fontColor(Theme.red)
+          .fontColor(Theme.blue)
           .onClick(() => {
+            this.attempts = 0;
             this.extract();
           })
       }
@@ -163,9 +174,10 @@ struct WebExtract {
         .width('100%')
         .layoutWeight(1)
         .onPageEnd(() => {
+          this.attempts = 0;
           setTimeout(() => {
             this.extract();
-          }, 2500);
+          }, 2000);
         })
 
       Column({ space: 8 }) {

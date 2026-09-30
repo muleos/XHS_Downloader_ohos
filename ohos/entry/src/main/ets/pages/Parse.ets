@@ -92,11 +92,16 @@ export struct ParsePage {
   }
 
   private offerWebExtract(url: string): void {
+    const isDouyin = MediaParser.detect(url) === Platform.DOUYIN;
+    const title = isDouyin ? '抖音开启了风控' : '直连解析失败';
+    const message = isDouyin ?
+      '抖音已把作品数据改为异步加载并启用人机验证，直连请求拿不到内容。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？' :
+      '该平台对直连请求受限（网络受限或需登录）。可以用内置浏览器内核打开该链接自动提取媒体，是否继续？';
     promptAction.showDialog({
-      title: '直连解析失败',
-      message: '平台风控拦截了直连请求。可以用内置浏览器打开该链接并提取媒体，是否继续？',
+      title: title,
+      message: message,
       buttons: [
-        { text: '网页提取', color: Theme.red },
+        { text: '网页提取', color: Theme.blue },
         { text: '取消', color: Theme.textSecondary }
       ]
     }).then((data: promptAction.ShowDialogSuccessResponse) => {

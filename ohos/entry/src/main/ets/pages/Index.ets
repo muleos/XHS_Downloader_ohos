@@ -45,7 +45,8 @@ struct Index {
       .width('100%')
       .height('100%')
 
-      // 底部悬浮胶囊导航（VHome 风格）
+      // 底部悬浮胶囊导航（VHome 复刻：白色胶囊 + 阴影，
+      // 选中项蓝色图标+蓝色文字，未选中黑色图标，规范热区 ≥48）
       Row() {
         NavItem({
           commands: NavIcons.HOME,
@@ -72,11 +73,11 @@ struct Index {
           }
         })
       }
-      .width('62%')
-      .height(58)
-      .borderRadius(29)
+      .width('70%')
+      .height(60)
+      .borderRadius(30)
       .backgroundColor('#FFFFFF')
-      .shadow({ radius: 18, color: 'rgba(0,0,0,0.10)', offsetY: 4 })
+      .shadow({ radius: 24, color: 'rgba(15,23,42,0.14)', offsetY: 6 })
       .justifyContent(FlexAlign.SpaceAround)
       .margin({ bottom: 28 })
     }
@@ -107,23 +108,23 @@ struct NavItem {
   onTap: () => void = (): void => {};
 
   build() {
-    Column({ space: 2 }) {
+    Column({ space: 3 }) {
       Path()
         .commands(this.commands)
         .width(24)
         .height(24)
         .fill(Color.Transparent)
-        .stroke(this.active ? Theme.red : Theme.textSecondary)
-        .strokeWidth(this.active ? 2 : 1.8)
+        .stroke(this.active ? Theme.blue : '#262626')
+        .strokeWidth(this.active ? 2.2 : 1.9)
         .strokeLineCap(LineCapStyle.Round)
         .strokeLineJoin(LineJoinStyle.Round)
       Text(this.label)
         .fontSize(10)
         .fontWeight(this.active ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(this.active ? Theme.red : Theme.textSecondary)
+        .fontColor(this.active ? Theme.blue : '#262626')
     }
     .width(64)
-    .height(48)
+    .height(52)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.onTap();

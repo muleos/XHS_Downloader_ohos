@@ -3,6 +3,9 @@ import { promptAction, router } from '@kit.ArkUI';
 
 export class Theme {
   static readonly red: string = '#FF2442';
+  /** VHome 主题蓝：底栏选中态 / 主操作按钮。 */
+  static readonly blue: string = '#4C6EF5';
+  static readonly blueLight: string = '#E9EEFF';
   static readonly textPrimary: string = '#E6000000';
   static readonly textSecondary: string = '#99000000';
   static readonly divider: string = '#1A000000';

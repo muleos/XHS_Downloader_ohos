@@ -277,29 +277,8 @@ struct MediaViewer {
   }
 
   build() {
-    Column() {
-      Row() {
-        Text('‹  返回')
-          .fontSize(16)
-          .fontColor('#FFFFFF')
-          .onClick(() => {
-            this.onClose();
-          })
-          .layoutWeight(1)
-        Text(`${this.current + 1}/${this.item.mediaPaths.length}`)
-          .fontSize(13)
-          .fontColor('#B0B0B0')
-        Text(this.confirmDelete ? '确认删除' : '删除')
-          .fontSize(14)
-          .fontColor(this.confirmDelete ? '#FF5252' : '#FFFFFF')
-          .margin({ left: 16 })
-          .onClick(() => {
-            this.onDelete();
-          })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: this.topAvoid + 10, bottom: 8 })
-
+    Stack({ alignContent: Alignment.Top }) {
+      // 媒体区（全屏黑底）
       if (this.item.mediaPaths.length === 0) {
         Column({ space: 10 }) {
           Text('🖼').fontSize(48)
@@ -308,47 +287,133 @@ struct MediaViewer {
             .fontColor('#B0B0B0')
         }
         .width('100%')
-        .layoutWeight(1)
+        .height('100%')
         .justifyContent(FlexAlign.Center)
       } else {
         Swiper() {
           ForEach(this.item.mediaPaths, (p: string) => {
-            if (this.item.workType === WorkType.VIDEO && p.endsWith('.mp4')) {
-              Video({ src: this.fileUri(p) })
-                .controls(true)
+            Stack({ alignContent: Alignment.Bottom }) {
+              if (this.item.workType === WorkType.VIDEO && p.endsWith('.mp4')) {
+                Video({ src: this.fileUri(p) })
+                  .controls(true)
+                  .width('100%')
+                  .height('100%')
+                  .objectFit(ImageFit.Contain)
+              } else {
+                Image(this.fileUri(p))
+                  .width('100%')
+                  .height('100%')
+                  .objectFit(ImageFit.Contain)
+              }
+              if (this.item.mediaPaths.length > 1) {
+                Row() {
+                  ForEach(this.item.mediaPaths, (_: string, idx: number) => {
+                    Circle({ width: 6, height: 6 })
+                      .fill(idx === this.current ? '#FFFFFF' : '#66FFFFFF')
+                  }, (idx: number) => idx.toString())
+                }
+                .justifyContent(FlexAlign.Center)
                 .width('100%')
-                .height('100%')
-                .objectFit(ImageFit.Contain)
-            } else {
-              Image(this.fileUri(p))
-                .width('100%')
-                .height('100%')
-                .objectFit(ImageFit.Contain)
+                .padding({ bottom: 96 })
+              }
             }
+            .width('100%')
+            .height('100%')
           }, (p: string) => p)
         }
         .index(this.current)
         .loop(false)
         .cachedCount(1)
-        .indicator(true)
+        .indicator(false)
         .layoutWeight(1)
         .width('100%')
+        .height('100%')
         .onChange((idx: number) => {
           this.current = idx;
         })
       }
 
-      Row({ space: 14 }) {
-        Blank()
-        Button(this.saving ? '保存中…' : '保存到相册', { buttonStyle: ButtonStyleMode.EMPHASIZED })
-          .enabled(!this.saving)
+      // 覆盖层：顶部圆形返回按钮 + 计数（VHome 圆形按钮风格）、
+      // 底部悬浮操作条（保存主按钮 + 删除）。
+      // 容器 hitTestBehavior=None：空隙处手势穿透给 Swiper，按钮仍可点。
+      Column() {
+        Row() {
+          Stack() {
+            Circle({ width: 40, height: 40 })
+              .fill('#B3FFFFFF')
+            Text('‹')
+              .fontSize(24)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Theme.textPrimary)
+          }
+          .width(40)
+          .height(40)
+          .onClick(() => {
+            this.onClose();
+          })
+
+          Text(`${this.current + 1} / ${Math.max(1, this.item.mediaPaths.length)}`)
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+
+          Stack() {
+            Circle({ width: 40, height: 40 })
+              .fill('#B3FFFFFF')
+            Path()
+              .commands('M12 4 V14 M8 10.5 L12 14.5 L16 10.5 M5.5 19 H18.5')
+              .width(24)
+              .height(24)
+              .fill(Color.Transparent)
+              .stroke(Theme.textPrimary)
+              .strokeWidth(1.9)
+              .strokeLineCap(LineCapStyle.Round)
+              .strokeLineJoin(LineJoinStyle.Round)
+          }
+          .width(40)
+          .height(40)
           .onClick(() => {
             this.onSave();
           })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: 16, right: 16, top: this.topAvoid + 10 })
+
         Blank()
+
+        Row({ space: 12 }) {
+          Button(this.saving ? '保存中…' : '保存到相册', { buttonStyle: ButtonStyleMode.NORMAL })
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .type(ButtonType.Capsule)
+            .backgroundColor(Theme.blue)
+            .fontColor('#FFFFFF')
+            .height(44)
+            .layoutWeight(1)
+            .enabled(!this.saving)
+            .onClick(() => {
+              this.onSave();
+            })
+          Button(this.confirmDelete ? '再点一次确认' : '删除', { buttonStyle: ButtonStyleMode.NORMAL })
+            .fontSize(15)
+            .type(ButtonType.Capsule)
+            .backgroundColor('#FFFFFF')
+            .fontColor('#E5484D')
+            .height(44)
+            .width(120)
+            .onClick(() => {
+              this.onDelete();
+            })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: this.bottomAvoid + 16 })
+        .alignItems(VerticalAlign.Bottom)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: this.bottomAvoid + 12 })
+      .height('100%')
+      .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
     .height('100%')
