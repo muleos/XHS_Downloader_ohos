@@ -24,16 +24,24 @@ export class SettingsStore {
     return this.cached;
   }
 
+  /**
+   * Mutates a *copy* and swaps it in: @State holders only re-render when the
+   * reference changes, so mutating the cached instance in place made every
+   * settings row look "un-clickable".
+   */
   async update(mutate: (s: AppSettings) => void): Promise<AppSettings> {
-    mutate(this.cached);
+    const cloned = AppSettings.fromJson(JsonNode.parse(JSON.stringify(this.cached.toJson())));
+    const next: AppSettings = cloned !== null ? cloned : new AppSettings();
+    mutate(next);
+    this.cached = next;
     if (this.store !== null) {
-      await this.store.put('json', JSON.stringify(this.cached.toJson()));
+      await this.store.put('json', JSON.stringify(next.toJson()));
       await this.store.flush();
     }
     for (const listener of this.listeners) {
-      listener(this.cached);
+      listener(next);
     }
-    return this.cached;
+    return next;
   }
 
   onChange(listener: (settings: AppSettings) => void): void {

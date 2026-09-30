@@ -1,11 +1,12 @@
-import { router } from '@kit.ArkUI';
-import { pasteboard } from '@kit.BasicServicesKit';
+/**
+ * 主入口：首页(媒体库瀑布流) / 解析 / 我的 三 Tab，
+ * 底部悬浮胶囊导航 + 顶部标题栏（参照 VHome UI）。
+ */
 import { AppContainer } from '../data/AppContainer';
-import { QueueListenerState, DownloadQueue } from '../data/DownloadQueue';
-import { TaskStore, DownloadTask, TaskStatus } from '../data/TaskStore';
-import { Theme, TitleBar, toast } from '../view/Common';
-import { XhsUrlParser } from '../core/XhsUrlParser';
-import { XhsResolveException, ResolveFailure } from '../core/XhsContentRepository';
+import { Theme, toast } from '../view/Common';
+import { HomePage } from './Home';
+import { ParsePage } from './Parse';
+import { MinePage } from './Mine';
 
 @Entry
 @Component
@@ -14,261 +15,118 @@ struct Index {
   @StorageLink('bottomAvoid') bottomAvoid: number = 0;
   @StorageLink('leftAvoid') leftAvoid: number = 0;
   @StorageLink('rightAvoid') rightAvoid: number = 0;
-  @State input: string = '';
-  @State batchMode: boolean = false;
-  @State resolving: boolean = false;
-  @State queueState: QueueListenerState = new QueueListenerState();
-
-  aboutToAppear(): void {
-    AppContainer.get().queue.onChange((state: QueueListenerState) => {
-      this.queueState = state;
-    });
-  }
-
-  private failureMessage(e: Error): ResourceStr {
-    if (e instanceof XhsResolveException) {
-      const failure = (e as XhsResolveException).failure;
-      switch (failure) {
-        case ResolveFailure.NOT_NOTE:
-          return $r('app.string.error_not_note');
-        case ResolveFailure.NO_MEDIA:
-          return $r('app.string.error_no_media');
-        case ResolveFailure.NETWORK:
-          return $r('app.string.error_network');
-        default:
-          return $r('app.string.error_parse_failed');
-      }
-    }
-    return $r('app.string.error_network');
-  }
-
-  private async parse(): Promise<void> {
-    const raw = this.input.trim();
-    if (raw.length === 0 || XhsUrlParser.extractLinks(raw).length === 0) {
-      toast($r('app.string.index_input_invalid'));
-      return;
-    }
-    const app = AppContainer.get();
-    this.resolving = true;
-    try {
-      const note = await app.repo.resolve(raw, app.settings.get().downloadOptions.useWebSession,
-        app.settings.get().downloadOptions.timeoutSeconds);
-      const taskId = app.queue.enqueueForSelection(note);
-      router.pushUrl({
-        url: 'pages/NoteDetail',
-        params: { 'taskId': taskId, 'note': note.toBundle() } as Record<string, Object>
-      });
-      this.input = '';
-    } catch (e) {
-      toast(this.failureMessage(e instanceof Error ? e : new Error(String(e))));
-    } finally {
-      this.resolving = false;
-    }
-  }
-
-  private async parseBatch(): Promise<void> {
-    const raw = this.input.trim();
-    if (XhsUrlParser.extractLinks(raw).length === 0) {
-      toast($r('app.string.index_input_invalid'));
-      return;
-    }
-    const ids = AppContainer.get().queue.enqueue(raw, false);
-    toast($r('app.string.index_resolve_ok') + ' ×' + ids.length);
-    this.input = '';
-  }
-
-  private readClipboardAndPrefill(): void {
-    try {
-      const data = pasteboard.getSystemPasteboard().getDataSync();
-      const text = data.getPrimaryText();
-      if (text !== null && text !== undefined && XhsUrlParser.extractLinks(text).length > 0 && this.input.length === 0) {
-        this.input = text;
-      }
-    } catch (e) {
-    }
-  }
+  @State currentTab: number = 0;
 
   build() {
-    Column() {
-      Row({ space: 8 }) {
-        Text($r('app.string.index_title'))
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Theme.textPrimary)
-          .layoutWeight(1)
-        Text($r('app.string.index_history'))
-          .fontSize(15)
-          .fontColor(Theme.red)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/History' });
-          })
-        Text($r('app.string.index_settings'))
-          .fontSize(15)
-          .fontColor(Theme.red)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/Settings' });
-          })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: this.topAvoid + 8, bottom: 10 })
-
-      Scroll {
-        Column({ space: 12 }) {
-          TextArea({ text: this.input, placeholder: $r('app.string.index_input_hint') })
-            .fontSize(15)
-            .height(this.batchMode ? 120 : 72)
-            .borderRadius(14)
-            .backgroundColor(Theme.cardBg)
-            .onChange((value: string) => {
-              this.input = value;
-            })
-
-          Row({ space: 10 }) {
-            Button(this.batchMode ? $r('app.string.index_parse_batch') : $r('app.string.index_parse'),
-              { buttonStyle: ButtonStyleMode.EMPHASIZED })
-              .layoutWeight(1)
-              .enabled(!this.resolving)
-              .onClick(() => {
-                this.parse();
-              })
-            Button($r('app.string.common_clear'), { buttonStyle: ButtonStyleMode.NORMAL })
-              .onClick(() => {
-                this.batchMode = !this.batchMode;
-              })
-          }
-          .width('100%')
-
-          if (this.queueState.tasks.length > 0) {
-            Text($r('app.string.index_tasks'))
-              .fontSize(14)
-              .fontColor(Theme.textSecondary)
-              .width('100%')
-          }
-          ForEach(this.queueState.tasks, (task: DownloadTask) => {
-            TaskRow({ task: task, speedBps: this.queueState.speedBps })
-          }, (task: DownloadTask) => task.id.toString() + '_' + task.status)
+    Stack({ alignContent: Alignment.Bottom }) {
+      // 内容层：三个 Tab 页保持挂载，仅切换可见性
+      Stack() {
+        Column() {
+          HomePage()
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: this.bottomAvoid + 16, top: 4 })
+        .height('100%')
+        .visibility(this.currentTab === 0 ? Visibility.Visible : Visibility.None)
+
+        Column() {
+          ParsePage()
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.currentTab === 1 ? Visibility.Visible : Visibility.None)
+
+        Column() {
+          MinePage()
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.currentTab === 2 ? Visibility.Visible : Visibility.None)
       }
-      .layoutWeight(1)
-      .align(Alignment.Top)
-      .onAppear(() => {
-        this.readClipboardAndPrefill();
-      })
+      .width('100%')
+      .height('100%')
+
+      // 底部悬浮胶囊导航（VHome 风格）
+      Row() {
+        NavItem({
+          commands: NavIcons.HOME,
+          label: '首页',
+          active: this.currentTab === 0,
+          onTap: (): void => {
+            this.currentTab = 0;
+          }
+        })
+        NavItem({
+          commands: NavIcons.PARSE,
+          label: '解析',
+          active: this.currentTab === 1,
+          onTap: (): void => {
+            this.currentTab = 1;
+          }
+        })
+        NavItem({
+          commands: NavIcons.MINE,
+          label: '我的',
+          active: this.currentTab === 2,
+          onTap: (): void => {
+            this.currentTab = 2;
+          }
+        })
+      }
+      .width('62%')
+      .height(58)
+      .borderRadius(29)
+      .backgroundColor('#FFFFFF')
+      .shadow({ radius: 18, color: 'rgba(0,0,0,0.10)', offsetY: 4 })
+      .justifyContent(FlexAlign.SpaceAround)
+      .margin({ bottom: 28 })
     }
-    .padding({ left: this.leftAvoid, right: this.rightAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)
   }
 }
 
-@Component
-struct TaskRow {
-  task: DownloadTask;
-  speedBps: number = 0;
-
-  private statusLabel(): ResourceStr {
-    switch (this.task.status) {
-      case TaskStatus.QUEUED:
-        return $r('app.string.task_state_pending');
-      case TaskStatus.RESOLVING:
-      case TaskStatus.DOWNLOADING:
-        return $r('app.string.task_state_downloading');
-      case TaskStatus.WAITING_FOR_USER:
-        return $r('app.string.task_state_wait_user');
-      case TaskStatus.PAUSED:
-        return $r('app.string.task_state_paused');
-      case TaskStatus.COMPLETED:
-        return $r('app.string.task_state_completed');
-      case TaskStatus.PARTIAL:
-        return $r('app.string.task_state_partial');
-      case TaskStatus.FAILED:
-        return $r('app.string.task_state_failed');
-      case TaskStatus.CANCELLED:
-        return $r('app.string.task_state_canceled');
-      case TaskStatus.SKIPPED:
-        return $r('app.string.task_state_skipped');
-      default:
-        return this.task.status;
-    }
-  }
-
-  build() {
-    Column({ space: 6 }) {
-      Row() {
-        Text(this.task.noteTitle.length > 0 ? this.task.noteTitle : this.task.noteUrl)
-          .fontSize(13)
-          .fontColor(Theme.textPrimary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(this.statusLabel())
-          .fontSize(12)
-          .fontColor(this.task.status === TaskStatus.COMPLETED ? '#4CAF50' : Theme.textSecondary)
-      }
-      .width('100%')
-
-      Progress({ value: this.task.progress, total: 100 })
-        .width('100%')
-        .height(4)
-        .color(Theme.red)
-
-      Row({ space: 8 }) {
-        Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}`)
-          .fontSize(11)
-          .fontColor(Theme.textSecondary)
-          .layoutWeight(1)
-        if (this.task.status === TaskStatus.DOWNLOADING || this.task.status === TaskStatus.RESOLVING) {
-          Text($r('app.string.task_pause'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.pause(this.task.id);
-            })
-        }
-        if (this.task.status === TaskStatus.PAUSED) {
-          Text($r('app.string.task_resume'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.resume(this.task.id);
-            })
-        }
-        if (this.task.status !== TaskStatus.COMPLETED && this.task.status !== TaskStatus.CANCELLED) {
-          Text($r('app.string.task_cancel'))
-            .fontSize(12)
-            .fontColor(Theme.textSecondary)
-            .onClick(() => {
-              AppContainer.get().queue.cancel(this.task.id);
-            })
-        }
-        if (this.task.status === TaskStatus.FAILED || this.task.status === TaskStatus.PARTIAL) {
-          Text($r('app.string.task_retry'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.retry(this.task.id);
-            })
-        }
-      }
-      .width('100%')
-    }
-    .alignItems(HorizontalAlign.Start)
-    .width('100%')
-    .padding(12)
-    .borderRadius(12)
-    .backgroundColor(Theme.cardBg)
-  }
+/**
+ * 底部页签矢量图标：24×24 描边网格，符合鸿蒙规范
+ * （图标 24、字号 10fp、触控热区 ≥48）。
+ */
+export class NavIcons {
+  static readonly HOME: string =
+    'M4 10.5 L12 3.8 L20 10.5 V20 H4 Z M9.5 20 V14 H14.5 V20';
+  static readonly PARSE: string =
+    'M9.5 17.5 H7 A4.5 4.5 0 0 1 7 8.5 H9.5 M14.5 8.5 H17 A4.5 4.5 0 0 1 17 17.5 H14.5 M8.5 13 H15.5';
+  static readonly MINE: string =
+    'M12 3 A4 4 0 1 0 12 11 A4 4 0 1 0 12 3 Z M4.5 21 V20 A5 5 0 0 1 9.5 15 H14.5 A5 5 0 0 1 19.5 20 V21';
 }
 
-function formatSpeed(n: number): string {
-  if (n <= 0) {
-    return '';
+@Component
+struct NavItem {
+  commands: string = '';
+  label: string = '';
+  active: boolean = false;
+  onTap: () => void = (): void => {};
+
+  build() {
+    Column({ space: 2 }) {
+      Path()
+        .commands(this.commands)
+        .width(24)
+        .height(24)
+        .fill(Color.Transparent)
+        .stroke(this.active ? Theme.red : Theme.textSecondary)
+        .strokeWidth(this.active ? 2 : 1.8)
+        .strokeLineCap(LineCapStyle.Round)
+        .strokeLineJoin(LineJoinStyle.Round)
+      Text(this.label)
+        .fontSize(10)
+        .fontWeight(this.active ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(this.active ? Theme.red : Theme.textSecondary)
+    }
+    .width(64)
+    .height(48)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.onTap();
+    })
   }
-  if (n < 1048576) {
-    return (n / 1024).toFixed(0) + 'KB/s';
-  }
-  return (n / 1048576).toFixed(1) + 'MB/s';
 }

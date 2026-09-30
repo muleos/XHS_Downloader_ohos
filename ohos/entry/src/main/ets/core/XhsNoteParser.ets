@@ -8,6 +8,11 @@
 import { JsonNode } from './JsonNode';
 import { MediaCandidate, ResolvedImage, ResolvedLivePhoto, ResolvedNote, ResolvedNoteItem, ResolvedVideo } from './models';
 
+interface CommentImagesResult {
+  images: ResolvedImage[];
+  hasMore: boolean;
+}
+
 export class XhsLivePhotoPair {
   imageUrl: string;
   videoUrl: string;
@@ -165,8 +170,13 @@ export class XhsNoteParser {
       noteId = expectedNoteId;
     }
     const imageListNode = note.opt('imageList') !== null ? note.opt('imageList')! : note.opt('images');
-    const imageList: JsonNode[] = imageListNode !== null ? imageListNode.optArray('__self') :
-      (imageListNode !== null && imageListNode.length() > 0 ? this.selfArray(imageListNode) : []);
+    let imageList: JsonNode[] = [];
+    if (imageListNode !== null) {
+      imageList = imageListNode.optArray('__self');
+      if (imageList.length === 0) {
+        imageList = this.selfArray(imageListNode);
+      }
+    }
     const mainVideo = note.optObject('video');
     let type = note.optString('type');
     if (type.length === 0) {
@@ -331,8 +341,7 @@ export class XhsNoteParser {
     return '';
   }
 
-  private parseCommentImages(comments: JsonNode | null, noteId: string):
-    { images: ResolvedImage[]; hasMore: boolean } {
+  private parseCommentImages(comments: JsonNode | null, noteId: string): CommentImagesResult {
     const images: ResolvedImage[] = [];
     const queue: JsonNode[] = [];
     const seen: string[] = [];
@@ -431,7 +440,7 @@ export class XhsNoteParser {
           picture.optNumber('width'), picture.optNumber('height')));
       }
     }
-    return { images: images, hasMore: hasMore };
+    return { images: images, hasMore: hasMore } as CommentImagesResult;
   }
 
   private videoCandidates(video: JsonNode | null): MediaCandidate[] {

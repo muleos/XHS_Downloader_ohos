@@ -3,7 +3,7 @@ export class MediaFileType {
   extension: string;
   mimeType: string;
 
-  private constructor(extension: string, mimeType: string) {
+  constructor(extension: string, mimeType: string) {
     this.extension = extension;
     this.mimeType = mimeType;
   }

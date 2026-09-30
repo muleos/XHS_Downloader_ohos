@@ -7,7 +7,7 @@
 import { image } from '@kit.ImageKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { LivePhotoFormat } from './models';
-import { MotionPhotoContainer } from './MotionPhotoContainer';
+import { MotionPhotoContainer, ContainerLayout } from './MotionPhotoContainer';
 import { BmffProbe } from './BmffProbe';
 import { ExifWriter } from './ExifWriter';
 import { ByteReader } from './ByteReader';
@@ -76,7 +76,7 @@ export class ComposeResult {
 
 export class LivePhotoComposer {
   static resolveFormat(format: LivePhotoFormat): LivePhotoFormat {
-    return LivePhotoFormatResolver.resolve(format, deviceInfo.manufacturer, deviceInfo.brand);
+    return LivePhotoFormatResolver.resolve(format, deviceInfo.manufacture, deviceInfo.brand);
   }
 
   /** Full MERGED pipeline: convert → (vendor exif) → assemble → verify. */
@@ -100,10 +100,14 @@ export class LivePhotoComposer {
     }
     MotionPhotoContainer.write(tagged, videoBytes, resolved, videoMime, frameCount);
     result.outputBytes = MotionPhotoContainer.lastOutput;
-    const verify = BmffProbe.inspect(result.outputBytes, MotionPhotoContainer.lastLayout.videoOffset,
-      MotionPhotoContainer.lastLayout.videoLength);
-    if (!verify.equals(tracks)) {
-      result.warnings.push('TRACK_MISMATCH');
+    const layout: ContainerLayout | null = MotionPhotoContainer.lastLayout;
+    if (layout !== null) {
+      const verify = BmffProbe.inspect(result.outputBytes, layout.videoOffset, layout.videoLength);
+      if (!verify.equals(tracks)) {
+        result.warnings.push('TRACK_MISMATCH');
+      }
+    } else {
+      result.warnings.push('LAYOUT_MISSING');
     }
     return result;
   }
@@ -158,7 +162,7 @@ export class LivePhotoComposer {
     let orientation = 1;
     try {
       const probe = image.createImageSource(bytes.slice(0, 2048).buffer as ArrayBuffer);
-      const raw = probe.getImageProperty(image.PropertyKey.ORIENTATION);
+      const raw = await probe.getImageProperty(image.PropertyKey.ORIENTATION);
       orientation = LivePhotoComposer.orientationValue(raw);
       probe.release();
     } catch (e) {
@@ -166,7 +170,7 @@ export class LivePhotoComposer {
     }
     const source = image.createImageSource(bytes.buffer as ArrayBuffer);
     try {
-      const pixelMap = await source.createPixelMap();
+      const pixelMap: image.PixelMap = await source.createPixelMap();
       const degrees = LivePhotoComposer.rotationDegrees(orientation);
       if (degrees === 90) {
         pixelMap.rotate(90);
@@ -182,7 +186,7 @@ export class LivePhotoComposer {
       }
       const packer = image.createImagePacker();
       const opts: image.PackingOption = { format: 'image/jpeg', quality: 95 };
-      const packed = await packer.pack(pixelMap, opts);
+      const packed = await packer.packToData(pixelMap, opts);
       if (isJpeg) {
         warnings.push('JPEG_REENCODED');
       } else {

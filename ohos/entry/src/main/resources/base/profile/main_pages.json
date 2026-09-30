@@ -4,6 +4,7 @@
     "pages/NoteDetail",
     "pages/Settings",
     "pages/History",
-    "pages/WebSession"
+    "pages/WebSession",
+    "pages/WebExtract"
   ]
 }

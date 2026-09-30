@@ -69,6 +69,13 @@ export class DownloadTask {
   active: boolean = false;
 }
 
+interface TaskPersistPayload {
+  tasks: DownloadTask[];
+  nextId: number;
+  authors: Record<string, string>;
+  completedKeys: string[];
+}
+
 export class TaskStore {
   private file: string = '';
   private tasks: DownloadTask[] = [];
@@ -103,7 +110,7 @@ export class TaskStore {
 
   private persist(): void {
     try {
-      const payload = {
+      const payload: TaskPersistPayload = {
         'tasks': this.tasks,
         'nextId': this.nextId,
         'authors': this.authors,
@@ -165,7 +172,13 @@ export class TaskStore {
       return;
     }
     if (remark.length === 0) {
-      delete this.authors[authorId];
+      const next: Record<string, string> = {};
+      for (const key of Object.keys(this.authors)) {
+        if (key !== authorId) {
+          next[key] = this.authors[key];
+        }
+      }
+      this.authors = next;
     } else {
       this.authors[authorId] = remark;
     }

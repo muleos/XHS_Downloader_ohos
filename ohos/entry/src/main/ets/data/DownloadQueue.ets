@@ -5,13 +5,13 @@
  */
 import { Context } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
-import { backgroundTaskManager } from '@kit.BackgroundTaskKit';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { AppContainer } from './AppContainer';
 import { SettingsStore } from './SettingsStore';
 import { RecordStore } from './RecordStore';
 import { TaskStore, DownloadTask, TaskStatus, TaskResource, ResourceState, TaskSession } from './TaskStore';
 import { TransferEngine, TransferException, TransferredMedia } from './TransferEngine';
-import { MediaSaver, StoredOutput } from './MediaSaver';
+import { MediaSaver, StoredOutput, FolderSaveRequest } from './MediaSaver';
 import { LivePhotoComposer } from '../core/LivePhotoComposer';
 import { NoteOutput } from '../core/NoteOutput';
 import { XhsContentRepository } from '../core/XhsContentRepository';
@@ -19,12 +19,20 @@ import { AppSettings, DownloadOptions, ResolvedNote, ResolvedNoteItem, LivePhoto
 import { XhsHttpClient } from '../core/XhsHttpClient';
 import { XhsUrlParser } from '../core/XhsUrlParser';
 import { MediaFileType } from '../core/MediaFileType';
+import { SavedItem, Platform, WorkType } from '../model/SaveModels';
 import { wantAgent } from '@kit.AbilityKit';
 
 export class QueueListenerState {
   tasks: DownloadTask[] = [];
   speedBps: number = 0;
   running: boolean = false;
+}
+
+/** Aggregated result of a save action (gallery or folder). */
+export class SaveResult {
+  saved: number = 0;
+  alreadySaved: number = 0;
+  error: string = '';
 }
 
 export class DownloadQueue {
@@ -43,6 +51,27 @@ export class DownloadQueue {
 
   constructor(client: XhsHttpClient) {
     this.client = client;
+  }
+
+  private requireContext(): Context {
+    if (this.context === null) {
+      throw new Error('context not initialized');
+    }
+    return this.context;
+  }
+
+  private requireRecords(): RecordStore {
+    if (this.records === null) {
+      throw new Error('records not initialized');
+    }
+    return this.records;
+  }
+
+  private requireSettings(): SettingsStore {
+    if (this.settings === null) {
+      throw new Error('settings not initialized');
+    }
+    return this.settings;
   }
 
   async init(context: Context, settings: SettingsStore, records: RecordStore, repo: XhsContentRepository): Promise<void> {
@@ -173,6 +202,7 @@ export class DownloadQueue {
     for (const res of task.resources) {
       if (res.state === ResourceState.FAILED) {
         res.state = ResourceState.DOWNLOADING;
+        res.claimed = false; // claimNext skips claimed resources otherwise
       }
     }
     task.status = task.resources.length > 0 ? TaskStatus.DOWNLOADING : TaskStatus.QUEUED;
@@ -204,7 +234,7 @@ export class DownloadQueue {
         wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
       };
       const agent = await wantAgent.getWantAgent(info);
-      await backgroundTaskManager.startBackgroundRunning(ctx, backgroundTaskManager.RequestType.DATA_TRANSFER, agent);
+      await backgroundTaskManager.startBackgroundRunning(ctx, backgroundTaskManager.BackgroundMode.DATA_TRANSFER, agent);
     } catch (e) {
       // Best-effort: in-app download still works without the continuous task.
     }
@@ -265,7 +295,7 @@ export class DownloadQueue {
         task.status = TaskStatus.RESOLVING;
         this.store.touch(task);
         this.notify();
-        note = await this.repo.resolve(task.noteUrl, options.useWebSession, options.timeoutSeconds);
+        note = await AppContainer.get().repo.resolve(task.noteUrl, options.useWebSession, options.timeoutSeconds);
         task.session.resolvedJson = JSON.stringify(note.toBundle());
         task.noteTitle = note.title;
         task.noteType = note.type;
@@ -279,7 +309,7 @@ export class DownloadQueue {
         await this.saveTextOutputs(task, note, folders, options);
         task.status = TaskStatus.COMPLETED;
         this.store.touch(task);
-        this.records.add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'info', Date.now()));
+        this.requireRecords().add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'info', Date.now()));
         return;
       }
 
@@ -301,7 +331,7 @@ export class DownloadQueue {
       task.status = TaskStatus.DOWNLOADING;
       this.store.touch(task);
       this.notify();
-      const cacheDir = this.context.cacheDir + '/xhsdn/' + task.id;
+      const cacheDir = this.requireContext().cacheDir + '/xhsdn/' + task.id;
       await this.transferAll(task, note, options, cacheDir, folders);
 
       // 5) Publish results (skipped/completed already recorded inside transferAll).
@@ -317,7 +347,9 @@ export class DownloadQueue {
           failed++;
         }
       }
-      this.records.add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'downloaded', Date.now()));
+      this.requireRecords().add(new DownloadRecord(task.id, note.noteId, note.authorName, note.title, '', 'downloaded', Date.now()));
+      // Register completed media in the persistent library for the home feed.
+      this.registerToLibrary(task, note, options);
       if (failed === 0) {
         task.status = completed === 0 && skipped > 0 ? TaskStatus.SKIPPED : TaskStatus.COMPLETED;
       } else if (completed + skipped > 0) {
@@ -343,8 +375,67 @@ export class DownloadQueue {
     }
   }
 
+  /** Copies completed cache files into the persistent media library (home feed). */
+  private registerToLibrary(task: DownloadTask, note: ResolvedNote, options: DownloadOptions): void {
+    try {
+      const done: TaskResource[] = [];
+      for (const res of task.resources) {
+        if ((res.state === ResourceState.COMPLETED || res.state === ResourceState.SKIPPED) &&
+          res.tempPath.length > 0 && res.ext !== 'txt' && res.ext !== 'md') {
+          done.push(res);
+        }
+      }
+      if (done.length === 0) {
+        return;
+      }
+      const dir = this.requireContext().filesDir + '/media';
+      try {
+        fileIo.mkdirSync(dir, true);
+      } catch (e) {
+      }
+      const item = new SavedItem();
+      item.id = 'xhs_' + note.noteId + '_' + task.id;
+      item.platform = Platform.XHS;
+      item.workType = note.type === 'video' ? WorkType.VIDEO : WorkType.IMAGES;
+      item.title = note.title.length > 0 ? note.title : note.noteId;
+      if (item.title.length > 80) {
+        item.title = item.title.substring(0, 80);
+      }
+      item.author = note.authorName;
+      item.sourceUrl = note.canonicalUrl;
+      item.createTime = Date.now();
+      const seen: string[] = [];
+      for (const res of done) {
+        const ext = res.ext === 'mp4' ? 'mp4' : 'jpg';
+        const dest = dir + '/' + item.id + '_' + item.mediaPaths.length + '.' + ext;
+        try {
+          if (fileIo.accessSync(res.tempPath)) {
+            if (fileIo.accessSync(dest)) {
+              fileIo.unlinkSync(dest);
+            }
+            fileIo.copyFileSync(res.tempPath, dest);
+            if (seen.indexOf(dest) < 0) {
+              seen.push(dest);
+              item.mediaPaths.push(dest);
+            }
+            if (item.coverPath.length === 0 && ext === 'jpg') {
+              item.coverPath = dest;
+            }
+          }
+        } catch (e) {
+          // Skip this file.
+        }
+      }
+      if (item.mediaPaths.length > 0) {
+        AppContainer.get().saved.add(item);
+      }
+    } catch (e) {
+      // Library registration is best-effort.
+    }
+  }
+
   private planResources(task: DownloadTask, note: ResolvedNote, options: DownloadOptions): TaskResource[] {
-    const settings: AppSettings = this.settings.get();
+    const settings: AppSettings = this.requireSettings().get();
     const resources: TaskResource[] = [];
     const folders = NoteOutput.folders(note, options, this.store.remark(note.authorId));
     const forSelection = task.session.requireSelection || task.session.selected.length > 0;
@@ -357,7 +448,7 @@ export class DownloadQueue {
       } else if (!NoteOutput.isEligibleItem(note, i, options, false)) {
         continue;
       }
-      const mediaId = NoteOutput.mediaKey(note, i);
+      const mediaId = note.noteId + ':' + i;
       const key = NoteOutput.recordKey(note.noteId, mediaId, settings, folders);
       const baseName = NoteOutput.fileName(note, settings, i, 'jpg', Date.now());
       if (options.skipExisting && this.store.hasCompletedKey(key)) {
@@ -439,7 +530,7 @@ export class DownloadQueue {
     }
     try {
       const urls = res.refsJson.length > 0 ? (JSON.parse(res.refsJson) as string[]) : [res.name];
-      const media = await engine.fetch(this.context, urls, res.mediaId + '.' + res.ext,
+      const media = await engine.fetch(this.requireContext(), urls, res.mediaId + '.' + res.ext,
         options.maxRetries, options.timeoutSeconds,
         (received: number, total: number) => {
           res.bytes = received;
@@ -448,6 +539,15 @@ export class DownloadQueue {
         },
         () => this.cancelledResources.has(task.id + '/' + res.mediaId));
       res.tempPath = media.path;
+      // Align the extension with the sniffed payload (CDN may serve webp even
+      // when the planned name says .jpg).
+      if (media.type.extension.length > 0 && media.type.extension !== res.ext) {
+        res.ext = media.type.extension;
+        const dot = res.name.lastIndexOf('.');
+        if (dot > 0) {
+          res.name = res.name.substring(0, dot) + '.' + res.ext;
+        }
+      }
       try {
         const stored = await this.publish(task, note, options, media, res, folders);
         res.name = stored.name;
@@ -473,36 +573,110 @@ export class DownloadQueue {
     this.notify();
   }
 
-  /** Called from a SaveButton click handler — publishes cached files to the gallery. */
-  async saveCompleted(context: Context, taskId: number): Promise<number> {
+  /** Publishes cached files to the gallery (system creation dialog, then fallback). */
+  async saveCompleted(context: Context, taskId: number): Promise<SaveResult> {
+    const result = new SaveResult();
     const task = this.store.byId(taskId);
     if (task === null) {
-      return 0;
+      result.error = 'task not found';
+      return result;
     }
     const note = this.store.loadNote(task);
     if (note === null) {
-      return 0;
+      result.error = 'note not cached';
+      return result;
     }
     const options = task.session.options !== null ? task.session.options : this.currentOptions();
     const folders = NoteOutput.folders(note, options, this.store.remark(note.authorId));
-    let saved = 0;
+    const pending: TaskResource[] = [];
     for (const res of task.resources) {
-      if (res.state !== ResourceState.COMPLETED || res.savedUri.length > 0 || res.tempPath.length === 0) {
+      if (res.state !== ResourceState.COMPLETED || res.tempPath.length === 0) {
         continue;
       }
+      if (res.savedUri.length > 0) {
+        result.alreadySaved++;
+      } else {
+        pending.push(res);
+      }
+    }
+    if (pending.length > 0) {
+      let dialogError = '';
       try {
-        const type = new MediaFileType(res.ext, res.ext === 'mp4' ? 'video/mp4' : 'image/jpeg');
-        const stored = await MediaSaver.storeArchived(context, res.tempPath, type, res.name,
-          folders, options, res.mediaId);
-        res.savedUri = stored.uri;
-        saved++;
+        // Primary: one system dialog per chunk of files.
+        const files: FolderSaveRequest[] = pending.map((res: TaskResource): FolderSaveRequest => {
+          const f = new FolderSaveRequest();
+          f.path = res.tempPath;
+          f.name = res.name;
+          return f;
+        });
+        const created = await MediaSaver.storeGalleryBatch(context, files);
+        if (created > 0) {
+          result.saved += created;
+          for (const res of pending) {
+            res.savedUri = 'gallery://created';
+          }
+        } else {
+          result.error = 'cancelled';
+        }
       } catch (e) {
-        break;
+        dialogError = e instanceof Error ? e.message : String(e);
+      }
+      if (result.saved === 0) {
+        // Fallback: per-file applyChanges (needs security-component authorization).
+        let lastError = dialogError;
+        for (const res of pending) {
+          try {
+            const type = new MediaFileType(res.ext, res.ext === 'mp4' ? 'video/mp4' : 'image/jpeg');
+            const stored = await MediaSaver.storeArchived(context, res.tempPath, type, res.name,
+              folders, options, res.mediaId);
+            res.savedUri = stored.uri;
+            result.saved++;
+          } catch (e2) {
+            lastError = e2 instanceof Error ? e2.message : String(e2);
+          }
+        }
+        if (result.saved === 0 && lastError.length > 0) {
+          result.error = lastError;
+        }
       }
     }
     this.store.touch(task);
     this.notify();
-    return saved;
+    return result;
+  }
+
+  /** Copies cached files into a user-chosen system folder via the document picker. */
+  async saveCompletedToFolder(context: Context, taskId: number): Promise<SaveResult> {
+    const result = new SaveResult();
+    const task = this.store.byId(taskId);
+    if (task === null) {
+      result.error = 'task not found';
+      return result;
+    }
+    const files: FolderSaveRequest[] = [];
+    for (const res of task.resources) {
+      if (res.state !== ResourceState.COMPLETED || res.tempPath.length === 0) {
+        continue;
+      }
+      const f = new FolderSaveRequest();
+      f.path = res.tempPath;
+      f.name = res.name;
+      files.push(f);
+    }
+    if (files.length === 0) {
+      result.error = 'nothing downloaded yet';
+      return result;
+    }
+    try {
+      const outs = await MediaSaver.storeToFolder(files);
+      result.saved = outs.length;
+      if (outs.length === 0) {
+        result.error = 'cancelled';
+      }
+    } catch (e) {
+      result.error = e instanceof Error ? e.message : String(e);
+    }
+    return result;
   }
 
   private async publish(task: DownloadTask, note: ResolvedNote, options: DownloadOptions,
@@ -510,7 +684,7 @@ export class DownloadQueue {
     if (res.livePair) {
       return this.publishLivePhoto(task, note, options, media, res, folders);
     }
-    return MediaSaver.storeArchived(this.context, media.path, media.type, res.name,
+    return MediaSaver.storeArchived(this.requireContext(), media.path, media.type, res.name,
       folders, options, res.mediaId);
   }
 
@@ -519,37 +693,37 @@ export class DownloadQueue {
     const plan = JSON.parse(res.refsJson) as string[];
     const imageUrl = plan[0];
     const videoUrl = plan[1];
-    const cacheDir = this.context.cacheDir + '/xhsdn/' + task.id;
+    const cacheDir = this.requireContext().cacheDir + '/xhsdn/' + task.id;
     const engine = new TransferEngine(cacheDir);
     const baseName = res.name.replace(/\.[a-z0-9]+$/i, '');
     const mode = options.livePhotoMode;
     const warning = 'livephoto_fallback_separate';
     if (mode === LivePhotoMode.STILL) {
-      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_still_in.jpg',
+      const imageMedia = await engine.fetch(this.requireContext(), [imageUrl], baseName + '_still_in.jpg',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      return MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type, baseName + '.jpg',
+      return MediaSaver.storeArchived(this.requireContext(), imageMedia.path, imageMedia.type, baseName + '.jpg',
         folders, options, res.mediaId);
     }
     if (mode === LivePhotoMode.SEPARATE) {
-      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_img_in.jpg',
+      const imageMedia = await engine.fetch(this.requireContext(), [imageUrl], baseName + '_img_in.jpg',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_vid_in.mp4',
+      const videoMedia = await engine.fetch(this.requireContext(), [videoUrl], baseName + '_vid_in.mp4',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      const imgOut = await MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type,
+      const imgOut = await MediaSaver.storeArchived(this.requireContext(), imageMedia.path, imageMedia.type,
         baseName + '.jpg', folders, options, res.mediaId + '_img');
-      const vidOut = await MediaSaver.storeArchived(this.context, videoMedia.path, videoMedia.type,
+      const vidOut = await MediaSaver.storeArchived(this.requireContext(), videoMedia.path, videoMedia.type,
         baseName + '.mp4', folders, options, res.mediaId + '_vid');
       return imgOut;
     }
     // MERGED with composition + fallback to separate.
     try {
-      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_c_in.jpg',
+      const imageMedia = await engine.fetch(this.requireContext(), [imageUrl], baseName + '_c_in.jpg',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_c_in.mp4',
+      const videoMedia = await engine.fetch(this.requireContext(), [videoUrl], baseName + '_c_in.mp4',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
       const videoSize = fileIo.statSync(videoMedia.path).size;
@@ -569,18 +743,18 @@ export class DownloadQueue {
       fileIo.writeSync(outFd.fd, composed.outputBytes.buffer as ArrayBuffer);
       fileIo.closeSync(outFd);
       const jpegType = new MediaFileType('jpg', 'image/jpeg');
-      return await MediaSaver.storeArchived(this.context, outPath, jpegType,
+      return await MediaSaver.storeArchived(this.requireContext(), outPath, jpegType,
         baseName + '_live.jpg', folders, options, res.mediaId);
     } catch (e) {
-      const imageMedia = await engine.fetch(this.context, [imageUrl], baseName + '_img_in.jpg',
+      const imageMedia = await engine.fetch(this.requireContext(), [imageUrl], baseName + '_img_in.jpg',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      const videoMedia = await engine.fetch(this.context, [videoUrl], baseName + '_vid_in.mp4',
+      const videoMedia = await engine.fetch(this.requireContext(), [videoUrl], baseName + '_vid_in.mp4',
         options.maxRetries, options.timeoutSeconds, () => {
         }, () => false);
-      const imgOut = await MediaSaver.storeArchived(this.context, imageMedia.path, imageMedia.type,
+      const imgOut = await MediaSaver.storeArchived(this.requireContext(), imageMedia.path, imageMedia.type,
         baseName + '.jpg', folders, options, res.mediaId + '_img');
-      await MediaSaver.storeArchived(this.context, videoMedia.path, videoMedia.type,
+      await MediaSaver.storeArchived(this.requireContext(), videoMedia.path, videoMedia.type,
         baseName + '.mp4', folders, options, res.mediaId + '_vid');
       res.warnings = JSON.stringify([warning]);
       return imgOut;
@@ -589,16 +763,16 @@ export class DownloadQueue {
 
   private async saveTextOutputs(task: DownloadTask, note: ResolvedNote, folders: string[],
     options: DownloadOptions): Promise<void> {
-    const format = options.noteFormat;
+    const format: number = options.noteFormatNone ? 0 : 3;
     if (format === 0) {
       return;
     }
-    const base = NoteOutput.fileName(note, this.settings.get(), 0, 'txt', Date.now());
+    const base = NoteOutput.fileName(note, this.requireSettings().get(), 0, 'txt', Date.now());
     if (format === 1 || format === 3) {
-      await MediaSaver.storeText(this.context, folders, base + '.txt', NoteOutput.text(note, false));
+      await MediaSaver.storeText(this.requireContext(), folders, base + '.txt', NoteOutput.text(note, false));
     }
     if (format === 2 || format === 3) {
-      await MediaSaver.storeText(this.context, folders, base + '.md', NoteOutput.text(note, true));
+      await MediaSaver.storeText(this.requireContext(), folders, base + '.md', NoteOutput.text(note, true));
     }
   }
 

@@ -1,4 +1,5 @@
 import { pasteboard } from '@kit.BasicServicesKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { AppContainer } from '../data/AppContainer';
 import { DownloadRecord } from '../core/models';
 import { Theme, TitleBar, toast } from '../view/Common';
@@ -54,7 +55,7 @@ struct History {
                     .height(32)
                     .fontSize(12)
                     .onClick(() => {
-                      const data = pasteboard.createData(pasteboard.MimeType.PLAIN_TEXT,
+                      const data = pasteboard.createData(utd.UniformDataType.PLAIN_TEXT,
                         'https://www.xiaohongshu.com/explore/' + r.noteId);
                       pasteboard.getSystemPasteboard().setData(data).then(() => {
                         toast($r('app.string.common_copied'));

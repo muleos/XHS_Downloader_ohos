@@ -1,181 +1,668 @@
 {
   "string": [
-    { "name": "module_desc", "value": "XHS note downloader (HarmonyOS)" },
-    { "name": "perm_internet_reason", "value": "Access note pages on Xiaohongshu to resolve media" },
-    { "name": "perm_background_reason", "value": "Continue download tasks in background" },
-    { "name": "detail_title", "value": "Note detail" },
-    { "name": "detail_copy_text", "value": "Copy text" },
-    { "name": "detail_save_info_txt", "value": "TXT" },
-    { "name": "detail_save_info_md", "value": "MD" },
-    { "name": "detail_info_saved", "value": "Note info saved" },
-    { "name": "detail_selected_count", "value": "Select all" },
-    { "name": "detail_download_selected", "value": "Download" },
-    { "name": "task_state_wait_user", "value": "Awaiting selection" },
-    { "name": "task_state_partial", "value": "Partial" },
-    { "name": "task_state_skipped", "value": "Skipped" },
-
-    { "name": "common_confirm", "value": "OK" },
-    { "name": "common_cancel", "value": "Cancel" },
-    { "name": "common_copy", "value": "Copy" },
-    { "name": "common_delete", "value": "Delete" },
-    { "name": "common_retry", "value": "Retry" },
-    { "name": "common_close", "value": "Close" },
-    { "name": "common_copied", "value": "Copied" },
-    { "name": "common_copy_failed", "value": "Copy failed" },
-    { "name": "common_saved", "value": "Saved" },
-    { "name": "common_back", "value": "Back" },
-    { "name": "common_clear", "value": "Clear" },
-
-    { "name": "index_title", "value": "XHS Downloader" },
-    { "name": "index_input_hint", "value": "Paste or enter a note link (share text supported)" },
-    { "name": "index_parse", "value": "Parse" },
-    { "name": "index_parse_batch", "value": "Batch parse" },
-    { "name": "index_batch_hint", "value": "One link per line; parsed notes join the queue" },
-    { "name": "index_input_invalid", "value": "No valid XHS link found" },
-    { "name": "index_resolving", "value": "Resolving…" },
-    { "name": "index_resolve_failed", "value": "Resolve failed" },
-    { "name": "index_resolve_failed_detail", "value": "Resolve failed: %s" },
-    { "name": "index_recent_records", "value": "Recent downloads" },
-    { "name": "index_view_all", "value": "View all" },
-    { "name": "index_tab_home", "value": "Parse" },
-    { "name": "index_tab_tasks", "value": "Tasks" },
-    { "name": "index_tab_mine", "value": "Me" },
-    { "name": "index_clipboard_found", "value": "Note link detected in clipboard" },
-    { "name": "index_use_clipboard", "value": "Use" },
-    { "name": "index_open_settings", "value": "Settings" },
-
-    { "name": "task_state_pending", "value": "Pending" },
-    { "name": "task_state_downloading", "value": "Downloading" },
-    { "name": "task_state_paused", "value": "Paused" },
-    { "name": "task_state_completed", "value": "Completed" },
-    { "name": "task_state_failed", "value": "Failed" },
-    { "name": "task_state_canceled", "value": "Canceled" },
-    { "name": "task_pause", "value": "Pause" },
-    { "name": "task_resume", "value": "Resume" },
-    { "name": "task_cancel", "value": "Cancel" },
-    { "name": "task_retry", "value": "Retry" },
-    { "name": "task_clear_finished", "value": "Clear finished" },
-    { "name": "task_empty", "value": "No download tasks" },
-    { "name": "task_speed", "value": "%s/s" },
-    { "name": "task_item_of", "value": "%s/%s" },
-
-    { "name": "detail_title", "value": "Note detail" },
-    { "name": "detail_load_failed", "value": "Load failed: %s" },
-    { "name": "detail_media_summary", "value": "Images %d · Videos %d · Live %d" },
-    { "name": "detail_selected_count", "value": "%d selected" },
-    { "name": "detail_select_all", "value": "Select all" },
-    { "name": "detail_select_none", "value": "Deselect all" },
-    { "name": "detail_download_selected", "value": "Download selected" },
-    { "name": "detail_download_to_gallery", "value": "Save to Gallery" },
-    { "name": "detail_download_to_files", "value": "Save to folder" },
-    { "name": "detail_copy_text", "value": "Copy text" },
-    { "name": "detail_save_info_txt", "value": "Save TXT" },
-    { "name": "detail_save_info_md", "value": "Save MD" },
-    { "name": "detail_no_media", "value": "No downloadable media in this note" },
-    { "name": "detail_comment_images", "value": "Comment images" },
-    { "name": "detail_live_photo", "value": "Live" },
-    { "name": "detail_video", "value": "Video" },
-    { "name": "detail_cover", "value": "Cover" },
-    { "name": "detail_comment", "value": "Comment" },
-    { "name": "detail_author_prefix", "value": "Author: %s" },
-    { "name": "detail_publish_prefix", "value": "Published: %s" },
-    { "name": "detail_download_started", "value": "Added to download queue" },
-    { "name": "detail_info_saved", "value": "Note info saved" },
-    { "name": "detail_need_webview", "value": "Login required. Sign in via Settings first" },
-    { "name": "detail_picking_dir", "value": "Choose a folder to save" },
-
-    { "name": "settings_title", "value": "Settings" },
-    { "name": "settings_group_media", "value": "Media & format" },
-    { "name": "settings_video_preference", "value": "Video preference" },
-    { "name": "settings_video_pref_resolution", "value": "Resolution first" },
-    { "name": "settings_video_pref_bitrate", "value": "Bitrate first" },
-    { "name": "settings_video_pref_size", "value": "Size first" },
-    { "name": "settings_video_pref_compatibility", "value": "Compatibility first" },
-    { "name": "settings_image_format", "value": "Image format" },
-    { "name": "settings_img_fmt_auto", "value": "Auto (original)" },
-    { "name": "settings_img_fmt_jpeg", "value": "JPEG" },
-    { "name": "settings_img_fmt_png", "value": "PNG" },
-    { "name": "settings_img_fmt_webp", "value": "WEBP" },
-    { "name": "settings_comment_images", "value": "Save comment images" },
-    { "name": "settings_video_cover", "value": "Also save video covers" },
-    { "name": "settings_live_photo_mode", "value": "Live photo saving" },
-    { "name": "settings_live_merged", "value": "Merged (motion photo)" },
-    { "name": "settings_live_separate", "value": "Separate image & video" },
-    { "name": "settings_live_still", "value": "Still image only" },
-    { "name": "settings_live_merged_fallback", "value": "Falls back to separate saving when merging is unavailable" },
-    { "name": "settings_group_task", "value": "Tasks" },
-    { "name": "settings_timeout", "value": "Timeout (seconds)" },
-    { "name": "settings_max_retries", "value": "Max retries" },
-    { "name": "settings_group_network", "value": "Network" },
-    { "name": "settings_use_web_session", "value": "Use web session" },
-    { "name": "settings_proxy", "value": "Proxy" },
-    { "name": "settings_proxy_hint", "value": "e.g. 127.0.0.1:7890 (empty to disable)" },
-    { "name": "settings_group_storage", "value": "Storage" },
-    { "name": "settings_custom_dir", "value": "Custom save folder" },
-    { "name": "settings_custom_dir_default", "value": "Default (Gallery)" },
-    { "name": "settings_clear_custom_dir", "value": "Restore default" },
-    { "name": "settings_naming_group", "value": "File naming" },
-    { "name": "settings_use_custom_naming", "value": "Use custom naming template" },
-    { "name": "settings_naming_template", "value": "Template" },
-    { "name": "settings_naming_tokens", "value": "Available tokens" },
-    { "name": "settings_group_session", "value": "Web session" },
-    { "name": "settings_open_web_session", "value": "Sign in to web" },
-    { "name": "settings_clear_session", "value": "Clear web session" },
-    { "name": "settings_group_record", "value": "Records" },
-    { "name": "settings_export_json", "value": "Export JSON" },
-    { "name": "settings_export_csv", "value": "Export CSV" },
-    { "name": "settings_clear_records", "value": "Clear records" },
-    { "name": "settings_group_about", "value": "About" },
-    { "name": "settings_version", "value": "Version" },
-    { "name": "settings_about_source", "value": "Source code" },
-    { "name": "settings_about_upstream", "value": "Upstream: JoeanAmier/XHS-Downloader" },
-    { "name": "settings_saved", "value": "Saved" },
-
-    { "name": "history_title", "value": "Records" },
-    { "name": "history_empty", "value": "No records yet" },
-    { "name": "history_copy_link", "value": "Copy link" },
-    { "name": "history_delete_confirm", "value": "Delete this record?" },
-    { "name": "history_clear_confirm", "value": "Clear all records?" },
-
-    { "name": "websession_title", "value": "Web session" },
-    { "name": "websession_hint", "value": "Sign in on the web, then extract the session below" },
-    { "name": "websession_extract", "value": "Extract session" },
-    { "name": "websession_extract_ok", "value": "Session saved" },
-    { "name": "websession_extract_empty", "value": "No session found. Sign in first" },
-    { "name": "websession_load_home", "value": "Open XHS web" },
-
-    { "name": "token_username", "value": "Author name" },
-    { "name": "token_user_id", "value": "Author ID" },
-    { "name": "token_title", "value": "Note title" },
-    { "name": "token_post_id", "value": "Note ID" },
-    { "name": "token_publish_time", "value": "Publish time" },
-    { "name": "token_download_timestamp", "value": "Download timestamp" },
-    { "name": "token_index", "value": "Index" },
-    { "name": "token_index_padded", "value": "Padded index" },
-
-    { "name": "error_network", "value": "Network request failed" },
-    { "name": "error_not_note", "value": "This link is not a note page" },
-    { "name": "error_no_media", "value": "No media resolved" },
-    { "name": "error_parse_failed", "value": "Failed to parse the page" },
-    { "name": "error_no_selection", "value": "Select items to download first" },
-    { "name": "detail_live_photo_tag", "value": "Live" },
-    { "name": "detail_video_tag", "value": "Video" },
-    { "name": "detail_save_to_files", "value": "Save to files" },
-    { "name": "history_delete", "value": "Delete" },
-    { "name": "index_history", "value": "History" },
-    { "name": "index_resolve_ok", "value": "Resolved" },
-    { "name": "index_settings", "value": "Settings" },
-    { "name": "settings_about_group", "value": "About" },
-    { "name": "settings_image_format_auto", "value": "Auto" },
-    { "name": "settings_live_mode_merged", "value": "Merged" },
-    { "name": "settings_live_mode_separate", "value": "Separate" },
-    { "name": "settings_live_mode_still", "value": "Still only" },
-    { "name": "settings_media_format", "value": "Media & format" },
-    { "name": "settings_network_group", "value": "Network" },
-    { "name": "settings_proxy_download", "value": "Use proxy for downloads" },
-    { "name": "settings_record_group", "value": "Records" },
-    { "name": "settings_session_group", "value": "Session" },
-    { "name": "settings_task_group", "value": "Tasks" },
-    { "name": "settings_timeout_seconds", "value": "Request timeout (s)" }
+    {
+      "name": "module_desc",
+      "value": "XHS note downloader (HarmonyOS)"
+    },
+    {
+      "name": "perm_internet_reason",
+      "value": "Access note pages on Xiaohongshu to resolve media"
+    },
+    {
+      "name": "perm_background_reason",
+      "value": "Continue download tasks in background"
+    },
+    {
+      "name": "detail_title",
+      "value": "Note detail"
+    },
+    {
+      "name": "detail_copy_text",
+      "value": "Copy text"
+    },
+    {
+      "name": "detail_save_info_txt",
+      "value": "Save TXT"
+    },
+    {
+      "name": "detail_save_info_md",
+      "value": "Save MD"
+    },
+    {
+      "name": "detail_info_saved",
+      "value": "Note info saved"
+    },
+    {
+      "name": "detail_selected_count",
+      "value": "%d selected"
+    },
+    {
+      "name": "detail_download_selected",
+      "value": "Download selected"
+    },
+    {
+      "name": "task_state_wait_user",
+      "value": "Awaiting selection"
+    },
+    {
+      "name": "task_state_partial",
+      "value": "Partial"
+    },
+    {
+      "name": "task_state_skipped",
+      "value": "Skipped"
+    },
+    {
+      "name": "common_confirm",
+      "value": "OK"
+    },
+    {
+      "name": "common_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "common_copy",
+      "value": "Copy"
+    },
+    {
+      "name": "common_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "common_retry",
+      "value": "Retry"
+    },
+    {
+      "name": "common_close",
+      "value": "Close"
+    },
+    {
+      "name": "common_copied",
+      "value": "Copied"
+    },
+    {
+      "name": "common_copy_failed",
+      "value": "Copy failed"
+    },
+    {
+      "name": "common_saved",
+      "value": "Saved"
+    },
+    {
+      "name": "common_back",
+      "value": "Back"
+    },
+    {
+      "name": "common_clear",
+      "value": "Clear"
+    },
+    {
+      "name": "index_title",
+      "value": "XHS Downloader"
+    },
+    {
+      "name": "index_input_hint",
+      "value": "Paste a share link or share text (XHS / Douyin / Instagram / TikTok / X)"
+    },
+    {
+      "name": "index_parse",
+      "value": "Parse"
+    },
+    {
+      "name": "index_parse_batch",
+      "value": "Batch parse"
+    },
+    {
+      "name": "index_batch_hint",
+      "value": "One link per line; parsed notes join the queue"
+    },
+    {
+      "name": "index_input_invalid",
+      "value": "No valid link found (XHS / Douyin / Instagram / TikTok / X)"
+    },
+    {
+      "name": "index_resolving",
+      "value": "Resolving…"
+    },
+    {
+      "name": "index_resolve_failed",
+      "value": "Resolve failed"
+    },
+    {
+      "name": "index_resolve_failed_detail",
+      "value": "Resolve failed: %s"
+    },
+    {
+      "name": "index_recent_records",
+      "value": "Recent downloads"
+    },
+    {
+      "name": "index_view_all",
+      "value": "View all"
+    },
+    {
+      "name": "index_tab_home",
+      "value": "Parse"
+    },
+    {
+      "name": "index_tab_tasks",
+      "value": "Tasks"
+    },
+    {
+      "name": "index_tab_mine",
+      "value": "Me"
+    },
+    {
+      "name": "index_clipboard_found",
+      "value": "Note link detected in clipboard"
+    },
+    {
+      "name": "index_use_clipboard",
+      "value": "Use"
+    },
+    {
+      "name": "index_open_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "task_state_pending",
+      "value": "Pending"
+    },
+    {
+      "name": "task_state_downloading",
+      "value": "Downloading"
+    },
+    {
+      "name": "task_state_paused",
+      "value": "Paused"
+    },
+    {
+      "name": "task_state_completed",
+      "value": "Completed"
+    },
+    {
+      "name": "task_state_failed",
+      "value": "Failed"
+    },
+    {
+      "name": "task_state_canceled",
+      "value": "Canceled"
+    },
+    {
+      "name": "task_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "task_resume",
+      "value": "Resume"
+    },
+    {
+      "name": "task_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "task_retry",
+      "value": "Retry"
+    },
+    {
+      "name": "task_clear_finished",
+      "value": "Clear finished"
+    },
+    {
+      "name": "task_empty",
+      "value": "No download tasks"
+    },
+    {
+      "name": "task_speed",
+      "value": "%s/s"
+    },
+    {
+      "name": "task_item_of",
+      "value": "%s/%s"
+    },
+    {
+      "name": "detail_load_failed",
+      "value": "Load failed: %s"
+    },
+    {
+      "name": "detail_media_summary",
+      "value": "Images %d · Videos %d · Live %d"
+    },
+    {
+      "name": "detail_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "detail_select_none",
+      "value": "Deselect all"
+    },
+    {
+      "name": "detail_download_to_gallery",
+      "value": "Save to Gallery"
+    },
+    {
+      "name": "detail_download_to_files",
+      "value": "Save to folder"
+    },
+    {
+      "name": "detail_no_media",
+      "value": "No downloadable media in this note"
+    },
+    {
+      "name": "detail_comment_images",
+      "value": "Comment images"
+    },
+    {
+      "name": "detail_live_photo",
+      "value": "Live"
+    },
+    {
+      "name": "detail_video",
+      "value": "Video"
+    },
+    {
+      "name": "detail_cover",
+      "value": "Cover"
+    },
+    {
+      "name": "detail_comment",
+      "value": "Comment"
+    },
+    {
+      "name": "detail_author_prefix",
+      "value": "Author: %s"
+    },
+    {
+      "name": "detail_publish_prefix",
+      "value": "Published: %s"
+    },
+    {
+      "name": "detail_download_started",
+      "value": "Added to download queue"
+    },
+    {
+      "name": "detail_need_webview",
+      "value": "Login required. Sign in via Settings first"
+    },
+    {
+      "name": "detail_picking_dir",
+      "value": "Choose a folder to save"
+    },
+    {
+      "name": "settings_title",
+      "value": "Settings"
+    },
+    {
+      "name": "settings_group_media",
+      "value": "Media & format"
+    },
+    {
+      "name": "settings_video_preference",
+      "value": "Video preference"
+    },
+    {
+      "name": "settings_video_pref_resolution",
+      "value": "Resolution first"
+    },
+    {
+      "name": "settings_video_pref_bitrate",
+      "value": "Bitrate first"
+    },
+    {
+      "name": "settings_video_pref_size",
+      "value": "Size first"
+    },
+    {
+      "name": "settings_video_pref_compatibility",
+      "value": "Compatibility first"
+    },
+    {
+      "name": "settings_image_format",
+      "value": "Image format"
+    },
+    {
+      "name": "settings_img_fmt_auto",
+      "value": "Auto (original)"
+    },
+    {
+      "name": "settings_img_fmt_jpeg",
+      "value": "JPEG"
+    },
+    {
+      "name": "settings_img_fmt_png",
+      "value": "PNG"
+    },
+    {
+      "name": "settings_img_fmt_webp",
+      "value": "WEBP"
+    },
+    {
+      "name": "settings_comment_images",
+      "value": "Save comment images"
+    },
+    {
+      "name": "settings_video_cover",
+      "value": "Also save video covers"
+    },
+    {
+      "name": "settings_live_photo_mode",
+      "value": "Live photo saving"
+    },
+    {
+      "name": "settings_live_merged",
+      "value": "Merged (motion photo)"
+    },
+    {
+      "name": "settings_live_separate",
+      "value": "Separate image & video"
+    },
+    {
+      "name": "settings_live_still",
+      "value": "Still image only"
+    },
+    {
+      "name": "settings_live_merged_fallback",
+      "value": "Falls back to separate saving when merging is unavailable"
+    },
+    {
+      "name": "settings_group_task",
+      "value": "Tasks"
+    },
+    {
+      "name": "settings_timeout",
+      "value": "Timeout (seconds)"
+    },
+    {
+      "name": "settings_max_retries",
+      "value": "Max retries"
+    },
+    {
+      "name": "settings_group_network",
+      "value": "Network"
+    },
+    {
+      "name": "settings_use_web_session",
+      "value": "Use web session"
+    },
+    {
+      "name": "settings_proxy",
+      "value": "Proxy"
+    },
+    {
+      "name": "settings_proxy_hint",
+      "value": "e.g. 127.0.0.1:7890 (empty to disable)"
+    },
+    {
+      "name": "settings_group_storage",
+      "value": "Storage"
+    },
+    {
+      "name": "settings_custom_dir",
+      "value": "Custom save folder"
+    },
+    {
+      "name": "settings_custom_dir_default",
+      "value": "Default (Gallery)"
+    },
+    {
+      "name": "settings_clear_custom_dir",
+      "value": "Restore default"
+    },
+    {
+      "name": "settings_naming_group",
+      "value": "File naming"
+    },
+    {
+      "name": "settings_use_custom_naming",
+      "value": "Use custom naming template"
+    },
+    {
+      "name": "settings_naming_template",
+      "value": "Template"
+    },
+    {
+      "name": "settings_naming_tokens",
+      "value": "Available tokens"
+    },
+    {
+      "name": "settings_group_session",
+      "value": "Web session"
+    },
+    {
+      "name": "settings_open_web_session",
+      "value": "Sign in to web"
+    },
+    {
+      "name": "settings_clear_session",
+      "value": "Clear web session"
+    },
+    {
+      "name": "settings_group_record",
+      "value": "Records"
+    },
+    {
+      "name": "settings_export_json",
+      "value": "Export JSON"
+    },
+    {
+      "name": "settings_export_csv",
+      "value": "Export CSV"
+    },
+    {
+      "name": "settings_clear_records",
+      "value": "Clear records"
+    },
+    {
+      "name": "settings_group_about",
+      "value": "About"
+    },
+    {
+      "name": "settings_version",
+      "value": "Version"
+    },
+    {
+      "name": "settings_about_source",
+      "value": "Source code"
+    },
+    {
+      "name": "settings_about_upstream",
+      "value": "Upstream: JoeanAmier/XHS-Downloader"
+    },
+    {
+      "name": "settings_saved",
+      "value": "Saved"
+    },
+    {
+      "name": "history_title",
+      "value": "Records"
+    },
+    {
+      "name": "history_empty",
+      "value": "No records yet"
+    },
+    {
+      "name": "history_copy_link",
+      "value": "Copy link"
+    },
+    {
+      "name": "history_delete_confirm",
+      "value": "Delete this record?"
+    },
+    {
+      "name": "history_clear_confirm",
+      "value": "Clear all records?"
+    },
+    {
+      "name": "websession_title",
+      "value": "Web session"
+    },
+    {
+      "name": "websession_hint",
+      "value": "Sign in on the web, then extract the session below"
+    },
+    {
+      "name": "websession_extract",
+      "value": "Extract session"
+    },
+    {
+      "name": "websession_extract_ok",
+      "value": "Session saved"
+    },
+    {
+      "name": "websession_extract_empty",
+      "value": "No session found. Sign in first"
+    },
+    {
+      "name": "websession_load_home",
+      "value": "Open XHS web"
+    },
+    {
+      "name": "token_username",
+      "value": "Author name"
+    },
+    {
+      "name": "token_user_id",
+      "value": "Author ID"
+    },
+    {
+      "name": "token_title",
+      "value": "Note title"
+    },
+    {
+      "name": "token_post_id",
+      "value": "Note ID"
+    },
+    {
+      "name": "token_publish_time",
+      "value": "Publish time"
+    },
+    {
+      "name": "token_download_timestamp",
+      "value": "Download timestamp"
+    },
+    {
+      "name": "token_index",
+      "value": "Index"
+    },
+    {
+      "name": "token_index_padded",
+      "value": "Padded index"
+    },
+    {
+      "name": "error_network",
+      "value": "Network request failed"
+    },
+    {
+      "name": "error_not_note",
+      "value": "This link is not a note page"
+    },
+    {
+      "name": "error_no_media",
+      "value": "No media resolved"
+    },
+    {
+      "name": "error_parse_failed",
+      "value": "Failed to parse the page"
+    },
+    {
+      "name": "error_no_selection",
+      "value": "Select items to download first"
+    },
+    {
+      "name": "detail_live_photo_tag",
+      "value": "Live"
+    },
+    {
+      "name": "detail_video_tag",
+      "value": "Video"
+    },
+    {
+      "name": "detail_save_to_files",
+      "value": "Save to files"
+    },
+    {
+      "name": "history_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "index_history",
+      "value": "History"
+    },
+    {
+      "name": "index_resolve_ok",
+      "value": "Resolved"
+    },
+    {
+      "name": "index_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "settings_about_group",
+      "value": "About"
+    },
+    {
+      "name": "settings_image_format_auto",
+      "value": "Auto"
+    },
+    {
+      "name": "settings_live_mode_merged",
+      "value": "Merged"
+    },
+    {
+      "name": "settings_live_mode_separate",
+      "value": "Separate"
+    },
+    {
+      "name": "settings_live_mode_still",
+      "value": "Still only"
+    },
+    {
+      "name": "settings_media_format",
+      "value": "Media & format"
+    },
+    {
+      "name": "settings_network_group",
+      "value": "Network"
+    },
+    {
+      "name": "settings_proxy_download",
+      "value": "Use proxy for downloads"
+    },
+    {
+      "name": "settings_record_group",
+      "value": "Records"
+    },
+    {
+      "name": "settings_session_group",
+      "value": "Session"
+    },
+    {
+      "name": "settings_task_group",
+      "value": "Tasks"
+    },
+    {
+      "name": "settings_timeout_seconds",
+      "value": "Request timeout (s)"
+    },
+    {
+      "name": "detail_comment_tag",
+      "value": "Comment"
+    },
+    {
+      "name": "index_tasks",
+      "value": "Download Tasks"
+    },
+    {
+      "name": "detail_save_failed",
+      "value": "Save failed: %s"
+    },
+    {
+      "name": "perm_media_read_reason",
+      "value": "Read downloaded media for dedup naming"
+    },
+    {
+      "name": "perm_media_save_reason",
+      "value": "Save downloaded images and videos to the gallery"
+    }
   ]
 }

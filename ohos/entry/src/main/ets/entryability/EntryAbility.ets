@@ -27,10 +27,18 @@ export default class EntryAbility extends UIAbility {
       mainWin.setWindowLayoutFullScreen(true);
       const sys = mainWin.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       const nav = mainWin.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
-      AppStorage.setOrCreate('topAvoid', sys.topRect.height);
-      AppStorage.setOrCreate('bottomAvoid', Math.max(nav.bottomRect.height, sys.bottomRect.height));
-      AppStorage.setOrCreate('leftAvoid', Math.max(sys.leftRect.width, 0));
-      AppStorage.setOrCreate('rightAvoid', Math.max(sys.rightRect.width, 0));
+      // Avoid-area rects are in px; convert to vp so page paddings are physical.
+      const ui = mainWin.getUIContext();
+      const topVp = Math.ceil(ui.px2vp(sys.topRect.height));
+      // Bottom: gesture indicator / nav bar, normalized to at most 28vp.
+      const bottomRaw = Math.max(nav.bottomRect.height, sys.bottomRect.height);
+      const bottomVp = Math.min(Math.ceil(ui.px2vp(bottomRaw)), 28);
+      const leftVp = Math.ceil(ui.px2vp(Math.max(sys.leftRect.width, 0)));
+      const rightVp = Math.ceil(ui.px2vp(Math.max(sys.rightRect.width, 0)));
+      AppStorage.setOrCreate('topAvoid', topVp);
+      AppStorage.setOrCreate('bottomAvoid', bottomVp);
+      AppStorage.setOrCreate('leftAvoid', leftVp);
+      AppStorage.setOrCreate('rightAvoid', rightVp);
       mainWin.setWindowSystemBarProperties({
         statusBarContentColor: '#000000'
       });

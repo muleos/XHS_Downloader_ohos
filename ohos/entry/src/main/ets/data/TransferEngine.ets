@@ -84,11 +84,16 @@ export class TransferEngine {
           return await this.fetchOne(url, target, timeoutSeconds, onProgress, isCancelled);
         } catch (e) {
           const failure = e instanceof TransferException ? (e as TransferException) : null;
-          if (failure !== null && (failure.reason === TransferFailure.NO_SPACE ||
-            failure.reason === TransferFailure.NON_MEDIA)) {
+          if (failure !== null && failure.reason === TransferFailure.NO_SPACE) {
             throw failure;
           }
           lastDetail = e instanceof Error ? e.message : String(e);
+          if (failure !== null && (failure.reason === TransferFailure.NON_MEDIA ||
+            failure.reason === TransferFailure.ACCESS)) {
+            // Server rejected this URL (error page / HTTP 4xx) — retrying the
+            // same URL is pointless, move on to the next candidate.
+            break;
+          }
           attempt++;
           if (attempt > retriesPerUrl || isCancelled()) {
             break;
@@ -140,11 +145,12 @@ export class TransferEngine {
 
       const headerState: HeaderState = { status: 0, total: 0, validator: '', contentType: '', rangeFirst: -1 };
       const headerPromise = new Promise<void>((resolve, reject) => {
-        client.on('headersReceive', (value: Record<string, string>) => {
+        client.on('headersReceive', (value: Object) => {
           try {
+            const raw = value as Record<string, string>;
             const lower: Record<string, string> = {};
-            for (const key of Object.keys(value)) {
-              lower[key.toLowerCase()] = String(value[key]);
+            for (const key of Object.keys(raw)) {
+              lower[key.toLowerCase()] = String(raw[key]);
             }
             headerState.status = parseInt(lower['response_code'] !== undefined ? lower['response_code'] : '0', 10);
             headerState.contentType = lower['content-type'] !== undefined ? lower['content-type'] : '';
@@ -161,6 +167,11 @@ export class TransferEngine {
             const type = headerState.contentType.toLowerCase();
             if (type.startsWith('text/') || type.includes('json') || type.includes('xml')) {
               reject(new TransferException(TransferFailure.NON_MEDIA, headerState.contentType));
+              return;
+            }
+            if (headerState.status >= 400) {
+              // HTTP error with media-ish content-type — try the next URL.
+              reject(new TransferException(TransferFailure.ACCESS, 'HTTP ' + headerState.status));
               return;
             }
             // Range validation: 206 must resume exactly at our offset; 200 restarts.
@@ -180,9 +191,9 @@ export class TransferEngine {
                 fileIo.unlinkSync(part);
               } catch (e) {
               }
-              fd = fileIo.openSync(part, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+              fd = fileIo.openSync(part, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC).fd;
             } else {
-              fd = fileIo.openSync(part, fileIo.OpenMode.READ_WRITE);
+              fd = fileIo.openSync(part, fileIo.OpenMode.READ_WRITE).fd;
             }
             resolve();
           } catch (err) {
@@ -244,7 +255,11 @@ export class TransferEngine {
   }
 
   private static options(written: number, cp: Checkpoint | null, timeoutSeconds: number): http.HttpRequestOptions {
-    const header: Record<string, string> = { 'User-Agent': XhsHttpClient.USER_AGENT };
+    const header: Record<string, string> = {
+      'User-Agent': XhsHttpClient.USER_AGENT,
+      // XHS CDNs reject token requests without an app/web referer.
+      'Referer': 'https://www.xiaohongshu.com/'
+    };
     if (written > 0 && cp !== null) {
       header['Range'] = 'bytes=' + written + '-';
       if (cp.validator.length > 0) {

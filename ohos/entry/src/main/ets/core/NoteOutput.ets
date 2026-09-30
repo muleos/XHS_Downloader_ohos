@@ -31,11 +31,22 @@ export class NoteOutput {
     return options.imageDownload || (options.videoDownload && options.livePhotoMode !== LivePhotoMode.STILL);
   }
 
-  /** CDN URL rewrite for images. AUTO = original quality; else imageView2 format. */
+  /**
+   * CDN URL rewrite for images. The `!ndf_*` suffix variants served by the
+   * webpic domains carry the center watermark; the bare image token on
+   * sns-img-* serves the watermark-free original.
+   *
+   * Resource keys can live under a bucket prefix (verified live: comment
+   * images need `comment/`, live-photo stills need `notes_pre_post/`) —
+   * dropping those segments makes every sns-img candidate 404 and the
+   * engine falls back to the watermarked webpic URL. Only the leading
+   * `{timestamp}/{signature}` pair is discarded; every other segment is
+   * preserved. All four storage shards are probed (bd/qc/al/hw).
+   */
   static imageUrls(image: ResolvedImage, format: ImageFormat): string[] {
     const raw = image.originalUrl;
+    const out: string[] = [];
     const m = raw.match(/^https?:\/\/([^/?#]+)(\/[^#?]*)?/i);
-    let preferred = '';
     if (m !== null) {
       const host = (m[1] === undefined ? '' : m[1]).toLowerCase();
       const path = (m[2] === undefined ? '' : m[2]).replace(/^\/+/, '');
@@ -44,24 +55,34 @@ export class NoteOutput {
       if (parts.length > 2 && /^[a-fA-F0-9]{32}$/.test(parts[1])) {
         segs = parts.slice(2);
       }
-      let joined = segs.join('/');
-      const bang = joined.indexOf('!');
+      // The image token is the last path segment; the `!suffix` (processing
+      // pipeline that bakes the watermark) is stripped from it.
+      let token = segs.length > 0 ? segs[segs.length - 1] : '';
+      const bang = token.indexOf('!');
       if (bang >= 0) {
-        joined = joined.substring(0, bang);
+        token = token.substring(0, bang);
       }
+      // Keep bucket prefixes (comment/, notes_pre_post/, ...): the plain
+      // token 404s on sns-img when the resource lives under a bucket.
+      const prefixSegs = segs.slice(0, Math.max(0, segs.length - 1));
+      const prefix = prefixSegs.length > 0 ? prefixSegs.join('/') + '/' : '';
       const knownCdn = host.endsWith('.xhscdn.com') || host.endsWith('.xiaohongshu.com');
-      if (knownCdn && joined.length > 0) {
-        if (format === ImageFormat.AUTO) {
-          preferred = 'https://sns-img-bd.xhscdn.com/' + joined;
-        } else {
+      if (knownCdn && token.length > 0) {
+        // Original-quality, watermark-free candidates across all shards.
+        out.push('https://sns-img-bd.xhscdn.com/' + prefix + token);
+        out.push('https://sns-img-qc.xhscdn.com/' + prefix + token);
+        out.push('https://sns-img-al.xhscdn.com/' + prefix + token);
+        out.push('https://sns-img-hw.xhscdn.com/' + prefix + token);
+        // Bucket-less shape as a safety net for unusual prefixes.
+        if (prefix.length > 0) {
+          out.push('https://sns-img-bd.xhscdn.com/' + token);
+          out.push('https://sns-img-qc.xhscdn.com/' + token);
+        }
+        if (format !== ImageFormat.AUTO) {
           const fmt = format === ImageFormat.JPEG ? 'jpeg' : (format === ImageFormat.PNG ? 'png' : 'webp');
-          preferred = 'https://ci.xiaohongshu.com/' + joined + '?imageView2/format/' + fmt;
+          out.push('https://ci.xiaohongshu.com/' + prefix + token + '?imageView2/format/' + fmt);
         }
       }
-    }
-    const out: string[] = [];
-    if (preferred.length > 0) {
-      out.push(preferred);
     }
     if (out.indexOf(image.sourceUrl) < 0) {
       out.push(image.sourceUrl);

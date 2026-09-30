@@ -2,8 +2,9 @@ import { router } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { AppContainer } from '../data/AppContainer';
 import { MediaSaver } from '../data/MediaSaver';
+import { ResourceState } from '../data/TaskStore';
 import { Theme, TitleBar, toast } from '../view/Common';
-import { ResolvedNote, ResolvedNoteItem, DownloadOptions } from '../core/models';
+import { ResolvedNote, ResolvedNoteItem, DownloadOptions, ImageFormat } from '../core/models';
 import { NamingFormat } from '../core/NamingFormat';
 import { NoteOutput } from '../core/NoteOutput';
 
@@ -48,11 +49,74 @@ struct NoteDetail {
   private async saveInfo(markdown: boolean): Promise<void> {
     const app = AppContainer.get();
     const options: DownloadOptions = app.settings.get().downloadOptions;
-    const folders = NoteOutput.folders(this.note, options, app.tasks.remark(this.note.authorId));
     const base = NoteOutput.fileName(this.note, app.settings.get(), 0, 'txt', Date.now());
-    const ok = await MediaSaver.saveTextFile(getContext(this), base + (markdown ? '.md' : '.txt'),
+    const out = await MediaSaver.storeText(getContext(this), [], base + (markdown ? '.md' : '.txt'),
       NoteOutput.text(this.note, markdown));
-    toast(ok ? $r('app.string.detail_info_saved') : $r('app.string.error_network'));
+    toast(out.skipped ? $r('app.string.error_network') : $r('app.string.detail_info_saved'));
+  }
+
+  /** True when at least one selected resource is downloaded and cached. */
+  private hasCompletedCache(): boolean {
+    const task = AppContainer.get().queue.tasks.byId(this.taskId);
+    if (task === null) {
+      return false;
+    }
+    for (const res of task.resources) {
+      if (res.state === ResourceState.COMPLETED && res.tempPath.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private startSelectedDownload(): boolean {
+    const ids: number[] = [];
+    for (let i = 0; i < this.selected.length; i++) {
+      if (this.selected[i]) {
+        ids.push(i);
+      }
+    }
+    if (ids.length === 0) {
+      toast($r('app.string.error_no_selection'));
+      return false;
+    }
+    AppContainer.get().queue.confirmSelection(this.taskId, ids);
+    return true;
+  }
+
+  private async saveToGallery(): Promise<void> {
+    const app = AppContainer.get();
+    if (!this.hasCompletedCache()) {
+      if (this.startSelectedDownload()) {
+        toast($r('app.string.detail_download_started'));
+      }
+      return;
+    }
+    const result = await app.queue.saveCompleted(getContext(this), this.taskId);
+    if (result.saved > 0) {
+      toast($r('app.string.common_saved'));
+    } else if (result.error.length > 0 && result.error !== 'cancelled') {
+      toast($r('app.string.detail_save_failed', result.error));
+    } else {
+      // Everything was already published earlier.
+      toast($r('app.string.common_saved'));
+    }
+  }
+
+  private async saveToFolder(): Promise<void> {
+    const app = AppContainer.get();
+    if (!this.hasCompletedCache()) {
+      if (this.startSelectedDownload()) {
+        toast($r('app.string.detail_download_started'));
+      }
+      return;
+    }
+    const result = await app.queue.saveCompletedToFolder(getContext(this), this.taskId);
+    if (result.saved > 0) {
+      toast($r('app.string.common_saved'));
+    } else if (result.error.length > 0 && result.error !== 'cancelled') {
+      toast($r('app.string.detail_save_failed', result.error));
+    }
   }
 
   private copyText(): void {
@@ -63,16 +127,11 @@ struct NoteDetail {
     });
   }
 
-  private async saveToGallery(): Promise<void> {
-    const saved = await AppContainer.get().queue.saveCompleted(getContext(this), this.taskId);
-    toast(saved > 0 ? $r('app.string.common_saved') : $r('app.string.error_no_selection'));
-  }
-
   build() {
     Column() {
       TitleBar({ title: this.note.title.length > 0 ? this.note.title : this.note.noteId, showBack: true })
 
-      Scroll {
+      Scroll() {
         Column({ space: 10 }) {
           Text(this.note.authorName + ' · ' + this.note.publishTime)
             .fontSize(12)
@@ -143,26 +202,23 @@ struct NoteDetail {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
 
-      Row({ space: 10 }) {
-        Button($r('app.string.detail_selected_count') + ': ' + this.countSelected(), { buttonStyle: ButtonStyleMode.NORMAL })
+      Row({ space: 8 }) {
+        Button($r('app.string.detail_download_to_gallery'), { buttonStyle: ButtonStyleMode.EMPHASIZED })
+          .layoutWeight(1)
+          .fontSize(13)
+          .backgroundColor(Theme.red)
+          .onClick(() => {
+            this.saveToGallery();
+          })
+        Button($r('app.string.detail_download_to_files'), { buttonStyle: ButtonStyleMode.NORMAL })
           .layoutWeight(1)
           .fontSize(13)
           .onClick(() => {
-            for (let i = 0; i < this.selected.length; i++) {
-              this.selected[i] = true;
-            }
+            this.saveToFolder();
           })
-        SaveButton()
-          .onClick((event: ClickEvent, result: SaveButtonOnClickResult) => {
-            if (result === SaveButtonOnClickResult.SUCCESS) {
-              this.saveToGallery();
-            }
-          })
-          .backgroundColor(Theme.red)
-        Button($r('app.string.detail_download_selected'), { buttonStyle: ButtonStyleMode.EMPHASIZED })
+        Button($r('app.string.detail_download_selected'), { buttonStyle: ButtonStyleMode.NORMAL })
           .layoutWeight(1)
           .fontSize(13)
-          .backgroundColor(Theme.red)
           .onClick(() => {
             this.confirmSelection();
           })
@@ -177,25 +233,19 @@ struct NoteDetail {
     .backgroundColor(Theme.pageBg)
   }
 
-  private countSelected(): number {
-    let n = 0;
-    for (const on of this.selected) {
-      if (on) {
-        n++;
-      }
-    }
-    return n;
-  }
-
   private thumbUrlFor(item: ResolvedNoteItem): string {
+    // Prefer the watermark-free token URL; the webpic preview variants can
+    // carry the center watermark baked by the CDN pipeline.
     if (item.image !== null) {
-      return item.image.previewUrl.length > 0 ? item.image.previewUrl : item.image.sourceUrl;
+      const clean = NoteOutput.imageUrls(item.image, ImageFormat.AUTO)[0];
+      return clean;
     }
     if (item.video !== null) {
       return item.video.previewUrl;
     }
     if (item.live !== null) {
-      return item.live.image.previewUrl;
+      const clean = NoteOutput.imageUrls(item.live.image, ImageFormat.AUTO)[0];
+      return clean;
     }
     return '';
   }

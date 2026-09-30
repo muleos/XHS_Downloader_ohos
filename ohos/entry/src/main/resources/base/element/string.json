@@ -1,181 +1,668 @@
 {
   "string": [
-    { "name": "module_desc", "value": "小红书笔记下载器（鸿蒙版）" },
-    { "name": "perm_internet_reason", "value": "访问小红书页面以解析笔记媒体资源" },
-    { "name": "perm_background_reason", "value": "在后台继续下载任务" },
-    { "name": "detail_title", "value": "笔记详情" },
-    { "name": "detail_copy_text", "value": "复制文案" },
-    { "name": "detail_save_info_txt", "value": "TXT" },
-    { "name": "detail_save_info_md", "value": "MD" },
-    { "name": "detail_info_saved", "value": "笔记信息已保存" },
-    { "name": "detail_selected_count", "value": "全选" },
-    { "name": "detail_download_selected", "value": "下载所选" },
-    { "name": "task_state_wait_user", "value": "待选择" },
-    { "name": "task_state_partial", "value": "部分成功" },
-    { "name": "task_state_skipped", "value": "已跳过" },
-
-    { "name": "common_confirm", "value": "确定" },
-    { "name": "common_cancel", "value": "取消" },
-    { "name": "common_copy", "value": "复制" },
-    { "name": "common_delete", "value": "删除" },
-    { "name": "common_retry", "value": "重试" },
-    { "name": "common_close", "value": "关闭" },
-    { "name": "common_copied", "value": "已复制" },
-    { "name": "common_copy_failed", "value": "复制失败" },
-    { "name": "common_saved", "value": "已保存" },
-    { "name": "common_back", "value": "返回" },
-    { "name": "common_clear", "value": "清空" },
-
-    { "name": "index_title", "value": "小红书下载器" },
-    { "name": "index_input_hint", "value": "粘贴或输入笔记链接，支持分享文本" },
-    { "name": "index_parse", "value": "解析" },
-    { "name": "index_parse_batch", "value": "批量解析" },
-    { "name": "index_batch_hint", "value": "每行一个链接，批量解析进入队列" },
-    { "name": "index_input_invalid", "value": "未识别到有效的小红书链接" },
-    { "name": "index_resolving", "value": "解析中…" },
-    { "name": "index_resolve_failed", "value": "解析失败" },
-    { "name": "index_resolve_failed_detail", "value": "解析失败：%s" },
-    { "name": "index_recent_records", "value": "最近下载" },
-    { "name": "index_view_all", "value": "查看全部" },
-    { "name": "index_tab_home", "value": "解析" },
-    { "name": "index_tab_tasks", "value": "任务" },
-    { "name": "index_tab_mine", "value": "我的" },
-    { "name": "index_clipboard_found", "value": "检测到剪贴板中的笔记链接" },
-    { "name": "index_use_clipboard", "value": "使用" },
-    { "name": "index_open_settings", "value": "设置" },
-
-    { "name": "task_state_pending", "value": "等待中" },
-    { "name": "task_state_downloading", "value": "下载中" },
-    { "name": "task_state_paused", "value": "已暂停" },
-    { "name": "task_state_completed", "value": "已完成" },
-    { "name": "task_state_failed", "value": "失败" },
-    { "name": "task_state_canceled", "value": "已取消" },
-    { "name": "task_pause", "value": "暂停" },
-    { "name": "task_resume", "value": "继续" },
-    { "name": "task_cancel", "value": "取消" },
-    { "name": "task_retry", "value": "重试" },
-    { "name": "task_clear_finished", "value": "清除已完成" },
-    { "name": "task_empty", "value": "暂无下载任务" },
-    { "name": "task_speed", "value": "%s/s" },
-    { "name": "task_item_of", "value": "%s/%s" },
-
-    { "name": "detail_title", "value": "笔记详情" },
-    { "name": "detail_load_failed", "value": "加载失败：%s" },
-    { "name": "detail_media_summary", "value": "图片 %d · 视频 %d · 实况 %d" },
-    { "name": "detail_selected_count", "value": "已选 %d 项" },
-    { "name": "detail_select_all", "value": "全选" },
-    { "name": "detail_select_none", "value": "取消全选" },
-    { "name": "detail_download_selected", "value": "下载所选" },
-    { "name": "detail_download_to_gallery", "value": "保存到相册" },
-    { "name": "detail_download_to_files", "value": "保存到文件夹" },
-    { "name": "detail_copy_text", "value": "复制文案" },
-    { "name": "detail_save_info_txt", "value": "保存 TXT" },
-    { "name": "detail_save_info_md", "value": "保存 MD" },
-    { "name": "detail_no_media", "value": "该笔记没有可下载的媒体" },
-    { "name": "detail_comment_images", "value": "评论配图" },
-    { "name": "detail_live_photo", "value": "实况" },
-    { "name": "detail_video", "value": "视频" },
-    { "name": "detail_cover", "value": "封面" },
-    { "name": "detail_comment", "value": "评论" },
-    { "name": "detail_author_prefix", "value": "作者：%s" },
-    { "name": "detail_publish_prefix", "value": "发布：%s" },
-    { "name": "detail_download_started", "value": "已加入下载队列" },
-    { "name": "detail_info_saved", "value": "笔记信息已保存" },
-    { "name": "detail_need_webview", "value": "需要登录后解析，请先在设置中登录网页版" },
-    { "name": "detail_picking_dir", "value": "请选择保存文件夹" },
-
-    { "name": "settings_title", "value": "设置" },
-    { "name": "settings_group_media", "value": "媒体与格式" },
-    { "name": "settings_video_preference", "value": "视频偏好" },
-    { "name": "settings_video_pref_resolution", "value": "分辨率优先" },
-    { "name": "settings_video_pref_bitrate", "value": "码率优先" },
-    { "name": "settings_video_pref_size", "value": "体积优先" },
-    { "name": "settings_video_pref_compatibility", "value": "兼容优先" },
-    { "name": "settings_image_format", "value": "图片格式" },
-    { "name": "settings_img_fmt_auto", "value": "自动（原始）" },
-    { "name": "settings_img_fmt_jpeg", "value": "JPEG" },
-    { "name": "settings_img_fmt_png", "value": "PNG" },
-    { "name": "settings_img_fmt_webp", "value": "WEBP" },
-    { "name": "settings_comment_images", "value": "保存评论配图" },
-    { "name": "settings_video_cover", "value": "同时保存视频封面" },
-    { "name": "settings_live_photo_mode", "value": "实况照片保存方式" },
-    { "name": "settings_live_merged", "value": "合并（动图照片）" },
-    { "name": "settings_live_separate", "value": "分开保存图片和视频" },
-    { "name": "settings_live_still", "value": "仅保存静态图片" },
-    { "name": "settings_live_merged_fallback", "value": "合并保存暂不可用时将自动分开保存" },
-    { "name": "settings_group_task", "value": "任务" },
-    { "name": "settings_timeout", "value": "超时时间（秒）" },
-    { "name": "settings_max_retries", "value": "最大重试次数" },
-    { "name": "settings_group_network", "value": "网络" },
-    { "name": "settings_use_web_session", "value": "使用网页登录会话" },
-    { "name": "settings_proxy", "value": "代理地址" },
-    { "name": "settings_proxy_hint", "value": "例如 127.0.0.1:7890（留空不启用）" },
-    { "name": "settings_group_storage", "value": "存储" },
-    { "name": "settings_custom_dir", "value": "自定义保存目录" },
-    { "name": "settings_custom_dir_default", "value": "默认（相册）" },
-    { "name": "settings_clear_custom_dir", "value": "恢复默认" },
-    { "name": "settings_naming_group", "value": "文件命名" },
-    { "name": "settings_use_custom_naming", "value": "使用自定义命名模板" },
-    { "name": "settings_naming_template", "value": "命名模板" },
-    { "name": "settings_naming_tokens", "value": "可用变量" },
-    { "name": "settings_group_session", "value": "网页会话" },
-    { "name": "settings_open_web_session", "value": "登录小红书网页版" },
-    { "name": "settings_clear_session", "value": "清除网页会话" },
-    { "name": "settings_group_record", "value": "下载记录" },
-    { "name": "settings_export_json", "value": "导出 JSON" },
-    { "name": "settings_export_csv", "value": "导出 CSV" },
-    { "name": "settings_clear_records", "value": "清空下载记录" },
-    { "name": "settings_group_about", "value": "关于" },
-    { "name": "settings_version", "value": "版本" },
-    { "name": "settings_about_source", "value": "开源地址" },
-    { "name": "settings_about_upstream", "value": "上游项目：JoeanAmier/XHS-Downloader" },
-    { "name": "settings_saved", "value": "已保存" },
-
-    { "name": "history_title", "value": "下载记录" },
-    { "name": "history_empty", "value": "暂无下载记录" },
-    { "name": "history_copy_link", "value": "复制链接" },
-    { "name": "history_delete_confirm", "value": "删除这条记录？" },
-    { "name": "history_clear_confirm", "value": "清空全部下载记录？" },
-
-    { "name": "websession_title", "value": "网页会话" },
-    { "name": "websession_hint", "value": "在小红书网页版完成登录后，点击下方按钮提取会话" },
-    { "name": "websession_extract", "value": "提取当前会话" },
-    { "name": "websession_extract_ok", "value": "会话已保存" },
-    { "name": "websession_extract_empty", "value": "未提取到会话，请先登录" },
-    { "name": "websession_load_home", "value": "打开小红书" },
-
-    { "name": "token_username", "value": "作者昵称" },
-    { "name": "token_user_id", "value": "作者 ID" },
-    { "name": "token_title", "value": "笔记标题" },
-    { "name": "token_post_id", "value": "笔记 ID" },
-    { "name": "token_publish_time", "value": "发布时间" },
-    { "name": "token_download_timestamp", "value": "下载时间戳" },
-    { "name": "token_index", "value": "序号" },
-    { "name": "token_index_padded", "value": "补零序号" },
-
-    { "name": "error_network", "value": "网络请求失败" },
-    { "name": "error_not_note", "value": "该链接不是笔记页" },
-    { "name": "error_no_media", "value": "未解析到媒体资源" },
-    { "name": "error_parse_failed", "value": "页面解析失败" },
-    { "name": "error_no_selection", "value": "请先选择要下载的内容" },
-    { "name": "detail_live_photo_tag", "value": "实况" },
-    { "name": "detail_video_tag", "value": "视频" },
-    { "name": "detail_save_to_files", "value": "保存到文件" },
-    { "name": "history_delete", "value": "删除" },
-    { "name": "index_history", "value": "历史" },
-    { "name": "index_resolve_ok", "value": "解析成功" },
-    { "name": "index_settings", "value": "设置" },
-    { "name": "settings_about_group", "value": "关于" },
-    { "name": "settings_image_format_auto", "value": "自动" },
-    { "name": "settings_live_mode_merged", "value": "合成实况" },
-    { "name": "settings_live_mode_separate", "value": "分开保存" },
-    { "name": "settings_live_mode_still", "value": "仅静态图" },
-    { "name": "settings_media_format", "value": "媒体与格式" },
-    { "name": "settings_network_group", "value": "网络" },
-    { "name": "settings_proxy_download", "value": "下载走代理" },
-    { "name": "settings_record_group", "value": "下载记录" },
-    { "name": "settings_session_group", "value": "登录会话" },
-    { "name": "settings_task_group", "value": "任务" },
-    { "name": "settings_timeout_seconds", "value": "请求超时（秒）" }
+    {
+      "name": "module_desc",
+      "value": "小红书笔记下载器（鸿蒙版）"
+    },
+    {
+      "name": "perm_internet_reason",
+      "value": "访问小红书页面以解析笔记媒体资源"
+    },
+    {
+      "name": "perm_background_reason",
+      "value": "在后台继续下载任务"
+    },
+    {
+      "name": "detail_title",
+      "value": "笔记详情"
+    },
+    {
+      "name": "detail_copy_text",
+      "value": "复制文案"
+    },
+    {
+      "name": "detail_save_info_txt",
+      "value": "保存 TXT"
+    },
+    {
+      "name": "detail_save_info_md",
+      "value": "保存 MD"
+    },
+    {
+      "name": "detail_info_saved",
+      "value": "笔记信息已保存"
+    },
+    {
+      "name": "detail_selected_count",
+      "value": "已选 %d 项"
+    },
+    {
+      "name": "detail_download_selected",
+      "value": "下载所选"
+    },
+    {
+      "name": "task_state_wait_user",
+      "value": "待选择"
+    },
+    {
+      "name": "task_state_partial",
+      "value": "部分成功"
+    },
+    {
+      "name": "task_state_skipped",
+      "value": "已跳过"
+    },
+    {
+      "name": "common_confirm",
+      "value": "确定"
+    },
+    {
+      "name": "common_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "common_copy",
+      "value": "复制"
+    },
+    {
+      "name": "common_delete",
+      "value": "删除"
+    },
+    {
+      "name": "common_retry",
+      "value": "重试"
+    },
+    {
+      "name": "common_close",
+      "value": "关闭"
+    },
+    {
+      "name": "common_copied",
+      "value": "已复制"
+    },
+    {
+      "name": "common_copy_failed",
+      "value": "复制失败"
+    },
+    {
+      "name": "common_saved",
+      "value": "已保存"
+    },
+    {
+      "name": "common_back",
+      "value": "返回"
+    },
+    {
+      "name": "common_clear",
+      "value": "清空"
+    },
+    {
+      "name": "index_title",
+      "value": "小红书下载器"
+    },
+    {
+      "name": "index_input_hint",
+      "value": "粘贴分享链接或分享文案（小红书 / 抖音 / Instagram / TikTok / X）"
+    },
+    {
+      "name": "index_parse",
+      "value": "解析"
+    },
+    {
+      "name": "index_parse_batch",
+      "value": "批量解析"
+    },
+    {
+      "name": "index_batch_hint",
+      "value": "每行一个链接，批量解析进入队列"
+    },
+    {
+      "name": "index_input_invalid",
+      "value": "未识别到有效链接，支持小红书 / 抖音 / Instagram / TikTok / X"
+    },
+    {
+      "name": "index_resolving",
+      "value": "解析中…"
+    },
+    {
+      "name": "index_resolve_failed",
+      "value": "解析失败"
+    },
+    {
+      "name": "index_resolve_failed_detail",
+      "value": "解析失败：%s"
+    },
+    {
+      "name": "index_recent_records",
+      "value": "最近下载"
+    },
+    {
+      "name": "index_view_all",
+      "value": "查看全部"
+    },
+    {
+      "name": "index_tab_home",
+      "value": "解析"
+    },
+    {
+      "name": "index_tab_tasks",
+      "value": "任务"
+    },
+    {
+      "name": "index_tab_mine",
+      "value": "我的"
+    },
+    {
+      "name": "index_clipboard_found",
+      "value": "检测到剪贴板中的笔记链接"
+    },
+    {
+      "name": "index_use_clipboard",
+      "value": "使用"
+    },
+    {
+      "name": "index_open_settings",
+      "value": "设置"
+    },
+    {
+      "name": "task_state_pending",
+      "value": "等待中"
+    },
+    {
+      "name": "task_state_downloading",
+      "value": "下载中"
+    },
+    {
+      "name": "task_state_paused",
+      "value": "已暂停"
+    },
+    {
+      "name": "task_state_completed",
+      "value": "已完成"
+    },
+    {
+      "name": "task_state_failed",
+      "value": "失败"
+    },
+    {
+      "name": "task_state_canceled",
+      "value": "已取消"
+    },
+    {
+      "name": "task_pause",
+      "value": "暂停"
+    },
+    {
+      "name": "task_resume",
+      "value": "继续"
+    },
+    {
+      "name": "task_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "task_retry",
+      "value": "重试"
+    },
+    {
+      "name": "task_clear_finished",
+      "value": "清除已完成"
+    },
+    {
+      "name": "task_empty",
+      "value": "暂无下载任务"
+    },
+    {
+      "name": "task_speed",
+      "value": "%s/s"
+    },
+    {
+      "name": "task_item_of",
+      "value": "%s/%s"
+    },
+    {
+      "name": "detail_load_failed",
+      "value": "加载失败：%s"
+    },
+    {
+      "name": "detail_media_summary",
+      "value": "图片 %d · 视频 %d · 实况 %d"
+    },
+    {
+      "name": "detail_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "detail_select_none",
+      "value": "取消全选"
+    },
+    {
+      "name": "detail_download_to_gallery",
+      "value": "保存到相册"
+    },
+    {
+      "name": "detail_download_to_files",
+      "value": "保存到文件夹"
+    },
+    {
+      "name": "detail_no_media",
+      "value": "该笔记没有可下载的媒体"
+    },
+    {
+      "name": "detail_comment_images",
+      "value": "评论配图"
+    },
+    {
+      "name": "detail_live_photo",
+      "value": "实况"
+    },
+    {
+      "name": "detail_video",
+      "value": "视频"
+    },
+    {
+      "name": "detail_cover",
+      "value": "封面"
+    },
+    {
+      "name": "detail_comment",
+      "value": "评论"
+    },
+    {
+      "name": "detail_author_prefix",
+      "value": "作者：%s"
+    },
+    {
+      "name": "detail_publish_prefix",
+      "value": "发布：%s"
+    },
+    {
+      "name": "detail_download_started",
+      "value": "已加入下载队列"
+    },
+    {
+      "name": "detail_need_webview",
+      "value": "需要登录后解析，请先在设置中登录网页版"
+    },
+    {
+      "name": "detail_picking_dir",
+      "value": "请选择保存文件夹"
+    },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "settings_group_media",
+      "value": "媒体与格式"
+    },
+    {
+      "name": "settings_video_preference",
+      "value": "视频偏好"
+    },
+    {
+      "name": "settings_video_pref_resolution",
+      "value": "分辨率优先"
+    },
+    {
+      "name": "settings_video_pref_bitrate",
+      "value": "码率优先"
+    },
+    {
+      "name": "settings_video_pref_size",
+      "value": "体积优先"
+    },
+    {
+      "name": "settings_video_pref_compatibility",
+      "value": "兼容优先"
+    },
+    {
+      "name": "settings_image_format",
+      "value": "图片格式"
+    },
+    {
+      "name": "settings_img_fmt_auto",
+      "value": "自动（原始）"
+    },
+    {
+      "name": "settings_img_fmt_jpeg",
+      "value": "JPEG"
+    },
+    {
+      "name": "settings_img_fmt_png",
+      "value": "PNG"
+    },
+    {
+      "name": "settings_img_fmt_webp",
+      "value": "WEBP"
+    },
+    {
+      "name": "settings_comment_images",
+      "value": "保存评论配图"
+    },
+    {
+      "name": "settings_video_cover",
+      "value": "同时保存视频封面"
+    },
+    {
+      "name": "settings_live_photo_mode",
+      "value": "实况照片保存方式"
+    },
+    {
+      "name": "settings_live_merged",
+      "value": "合并（动图照片）"
+    },
+    {
+      "name": "settings_live_separate",
+      "value": "分开保存图片和视频"
+    },
+    {
+      "name": "settings_live_still",
+      "value": "仅保存静态图片"
+    },
+    {
+      "name": "settings_live_merged_fallback",
+      "value": "合并保存暂不可用时将自动分开保存"
+    },
+    {
+      "name": "settings_group_task",
+      "value": "任务"
+    },
+    {
+      "name": "settings_timeout",
+      "value": "超时时间（秒）"
+    },
+    {
+      "name": "settings_max_retries",
+      "value": "最大重试次数"
+    },
+    {
+      "name": "settings_group_network",
+      "value": "网络"
+    },
+    {
+      "name": "settings_use_web_session",
+      "value": "使用网页登录会话"
+    },
+    {
+      "name": "settings_proxy",
+      "value": "代理地址"
+    },
+    {
+      "name": "settings_proxy_hint",
+      "value": "例如 127.0.0.1:7890（留空不启用）"
+    },
+    {
+      "name": "settings_group_storage",
+      "value": "存储"
+    },
+    {
+      "name": "settings_custom_dir",
+      "value": "自定义保存目录"
+    },
+    {
+      "name": "settings_custom_dir_default",
+      "value": "默认（相册）"
+    },
+    {
+      "name": "settings_clear_custom_dir",
+      "value": "恢复默认"
+    },
+    {
+      "name": "settings_naming_group",
+      "value": "文件命名"
+    },
+    {
+      "name": "settings_use_custom_naming",
+      "value": "使用自定义命名模板"
+    },
+    {
+      "name": "settings_naming_template",
+      "value": "命名模板"
+    },
+    {
+      "name": "settings_naming_tokens",
+      "value": "可用变量"
+    },
+    {
+      "name": "settings_group_session",
+      "value": "网页会话"
+    },
+    {
+      "name": "settings_open_web_session",
+      "value": "登录小红书网页版"
+    },
+    {
+      "name": "settings_clear_session",
+      "value": "清除网页会话"
+    },
+    {
+      "name": "settings_group_record",
+      "value": "下载记录"
+    },
+    {
+      "name": "settings_export_json",
+      "value": "导出 JSON"
+    },
+    {
+      "name": "settings_export_csv",
+      "value": "导出 CSV"
+    },
+    {
+      "name": "settings_clear_records",
+      "value": "清空下载记录"
+    },
+    {
+      "name": "settings_group_about",
+      "value": "关于"
+    },
+    {
+      "name": "settings_version",
+      "value": "版本"
+    },
+    {
+      "name": "settings_about_source",
+      "value": "开源地址"
+    },
+    {
+      "name": "settings_about_upstream",
+      "value": "上游项目：JoeanAmier/XHS-Downloader"
+    },
+    {
+      "name": "settings_saved",
+      "value": "已保存"
+    },
+    {
+      "name": "history_title",
+      "value": "下载记录"
+    },
+    {
+      "name": "history_empty",
+      "value": "暂无下载记录"
+    },
+    {
+      "name": "history_copy_link",
+      "value": "复制链接"
+    },
+    {
+      "name": "history_delete_confirm",
+      "value": "删除这条记录？"
+    },
+    {
+      "name": "history_clear_confirm",
+      "value": "清空全部下载记录？"
+    },
+    {
+      "name": "websession_title",
+      "value": "网页会话"
+    },
+    {
+      "name": "websession_hint",
+      "value": "在小红书网页版完成登录后，点击下方按钮提取会话"
+    },
+    {
+      "name": "websession_extract",
+      "value": "提取当前会话"
+    },
+    {
+      "name": "websession_extract_ok",
+      "value": "会话已保存"
+    },
+    {
+      "name": "websession_extract_empty",
+      "value": "未提取到会话，请先登录"
+    },
+    {
+      "name": "websession_load_home",
+      "value": "打开小红书"
+    },
+    {
+      "name": "token_username",
+      "value": "作者昵称"
+    },
+    {
+      "name": "token_user_id",
+      "value": "作者 ID"
+    },
+    {
+      "name": "token_title",
+      "value": "笔记标题"
+    },
+    {
+      "name": "token_post_id",
+      "value": "笔记 ID"
+    },
+    {
+      "name": "token_publish_time",
+      "value": "发布时间"
+    },
+    {
+      "name": "token_download_timestamp",
+      "value": "下载时间戳"
+    },
+    {
+      "name": "token_index",
+      "value": "序号"
+    },
+    {
+      "name": "token_index_padded",
+      "value": "补零序号"
+    },
+    {
+      "name": "error_network",
+      "value": "网络请求失败"
+    },
+    {
+      "name": "error_not_note",
+      "value": "该链接不是笔记页"
+    },
+    {
+      "name": "error_no_media",
+      "value": "未解析到媒体资源"
+    },
+    {
+      "name": "error_parse_failed",
+      "value": "页面解析失败"
+    },
+    {
+      "name": "error_no_selection",
+      "value": "请先选择要下载的内容"
+    },
+    {
+      "name": "detail_live_photo_tag",
+      "value": "实况"
+    },
+    {
+      "name": "detail_video_tag",
+      "value": "视频"
+    },
+    {
+      "name": "detail_save_to_files",
+      "value": "保存到文件"
+    },
+    {
+      "name": "history_delete",
+      "value": "删除"
+    },
+    {
+      "name": "index_history",
+      "value": "历史"
+    },
+    {
+      "name": "index_resolve_ok",
+      "value": "解析成功"
+    },
+    {
+      "name": "index_settings",
+      "value": "设置"
+    },
+    {
+      "name": "settings_about_group",
+      "value": "关于"
+    },
+    {
+      "name": "settings_image_format_auto",
+      "value": "自动"
+    },
+    {
+      "name": "settings_live_mode_merged",
+      "value": "合成实况"
+    },
+    {
+      "name": "settings_live_mode_separate",
+      "value": "分开保存"
+    },
+    {
+      "name": "settings_live_mode_still",
+      "value": "仅静态图"
+    },
+    {
+      "name": "settings_media_format",
+      "value": "媒体与格式"
+    },
+    {
+      "name": "settings_network_group",
+      "value": "网络"
+    },
+    {
+      "name": "settings_proxy_download",
+      "value": "下载走代理"
+    },
+    {
+      "name": "settings_record_group",
+      "value": "下载记录"
+    },
+    {
+      "name": "settings_session_group",
+      "value": "登录会话"
+    },
+    {
+      "name": "settings_task_group",
+      "value": "任务"
+    },
+    {
+      "name": "settings_timeout_seconds",
+      "value": "请求超时（秒）"
+    },
+    {
+      "name": "detail_comment_tag",
+      "value": "评论图"
+    },
+    {
+      "name": "index_tasks",
+      "value": "下载任务"
+    },
+    {
+      "name": "detail_save_failed",
+      "value": "保存失败：%s"
+    },
+    {
+      "name": "perm_media_read_reason",
+      "value": "读取已下载的图片和视频用于去重命名"
+    },
+    {
+      "name": "perm_media_save_reason",
+      "value": "保存下载的图片和视频到相册"
+    }
   ]
 }

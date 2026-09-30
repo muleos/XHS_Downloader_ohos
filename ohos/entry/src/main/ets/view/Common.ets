@@ -45,6 +45,10 @@ export struct TitleBar {
   }
 }
 
+@Builder
+export function emptyBuilder(): void {
+}
+
 @Component
 export struct SectionCard {
   title: ResourceStr = '';
@@ -66,5 +70,3 @@ export struct SectionCard {
   }
 }
 
-function emptyBuilder(): void {
-}

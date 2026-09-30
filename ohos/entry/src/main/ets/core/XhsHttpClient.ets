@@ -62,6 +62,16 @@ export class XhsHttpClient {
     await this.sessionStore.flush();
   }
 
+  /** Clear manual cookies and the WebView cookie jar ("clear session"). */
+  async clearSession(): Promise<void> {
+    await this.clearManualCookies();
+    try {
+      webview.WebCookieManager.clearAllCookiesSync();
+    } catch (e) {
+      // Ignore cookie-jar failures; manual cookies are already cleared.
+    }
+  }
+
   hasManualCookie(): boolean {
     if (this.sessionStore === null) {
       return false;

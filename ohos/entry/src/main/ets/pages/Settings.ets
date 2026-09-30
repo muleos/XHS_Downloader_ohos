@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { AppContainer } from '../data/AppContainer';
-import { MediaSaver } from '../data/MediaSaver';
+import { MediaSaver, StoredOutput } from '../data/MediaSaver';
 import { AppSettings, VideoPreference, ImageFormat, LivePhotoMode } from '../core/models';
 import { Theme, TitleBar, SectionCard, toast } from '../view/Common';
 
@@ -26,31 +26,38 @@ struct Settings {
   }
 
   @Builder
-  selectorRow(label: string, value: string, onTap: () => void) {
+  selectorRow(label: ResourceStr, value: ResourceStr, onTap: () => void) {
     Row() {
       Text(label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
       Text(value).fontSize(14).fontColor(Theme.red)
       Text('›').fontSize(18).fontColor(Theme.textSecondary).margin({ left: 6 })
     }
     .width('100%')
-    .height(44)
-    .onClick(() => onTap())
+    .height(48)
+    .onClick(() => {
+      onTap();
+    })
   }
 
+  /** 整行可点（44 高度热区），开关本身只做展示，避免与行点击重复触发。 */
   @Builder
-  toggleRow(label: string, on: boolean, onChange: (v: boolean) => void) {
+  toggleRow(label: ResourceStr, on: boolean, onChange: (v: boolean) => void) {
     Row() {
       Text(label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: on })
         .selectedColor(Theme.red)
-        .onChange((v: boolean) => onChange(v))
+        .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
-    .height(44)
+    .height(48)
+    .onClick(() => {
+      onChange(!on);
+      toast($r('app.string.settings_saved'));
+    })
   }
 
   @Builder
-  valueRow(label: string, value: string, onChange: (v: string) => void) {
+  valueRow(label: ResourceStr, value: string, onChange: (v: string) => void) {
     Row({ space: 8 }) {
       Text(label).fontSize(15).fontColor(Theme.textPrimary).width(120)
       TextInput({ text: value })
@@ -150,9 +157,12 @@ struct Settings {
                   s.useCustomNamingFormat = v;
                 });
               })
-            Text(getContext(this).resourceManager.getStringSync($r('app.string.settings_naming_template')) + ': ' + this.settings.customNamingTemplate)
-              .fontSize(12)
-              .fontColor(Theme.textSecondary)
+            this.valueRow($r('app.string.settings_naming_template'), this.settings.customNamingTemplate,
+              (v: string) => {
+                this.set((s: AppSettings) => {
+                  s.customNamingTemplate = v;
+                });
+              })
             Text($r('app.string.settings_naming_tokens'))
               .fontSize(12)
               .fontColor(Theme.textSecondary)
@@ -219,7 +229,7 @@ struct Settings {
     .backgroundColor(Theme.pageBg)
   }
 
-  private vpLabel(): string {
+  private vpLabel(): ResourceStr {
     switch (this.settings.downloadOptions.videoPreference) {
       case VideoPreference.BITRATE:
         return $r('app.string.settings_video_pref_bitrate');
@@ -232,7 +242,7 @@ struct Settings {
     }
   }
 
-  private ifLabel(): string {
+  private ifLabel(): ResourceStr {
     switch (this.settings.downloadOptions.imageFormat) {
       case ImageFormat.JPEG:
         return 'JPEG';
@@ -245,7 +255,7 @@ struct Settings {
     }
   }
 
-  private lpLabel(): string {
+  private lpLabel(): ResourceStr {
     switch (this.settings.downloadOptions.livePhotoMode) {
       case LivePhotoMode.SEPARATE:
         return $r('app.string.settings_live_mode_separate');
@@ -282,8 +292,8 @@ struct Settings {
     const text = app.records.exportText(json);
     const stamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 14);
     const name = 'xhsdn_records_' + stamp + (json ? '.json' : '.csv');
-    MediaSaver.saveTextFile(getContext(this), name, text).then((ok: boolean) => {
-      toast(ok ? $r('app.string.common_saved') : $r('app.string.error_network'));
+    MediaSaver.storeText(getContext(this), [], name, text).then((out: StoredOutput) => {
+      toast(out.skipped ? $r('app.string.error_network') : $r('app.string.common_saved'));
     });
   }
 }
