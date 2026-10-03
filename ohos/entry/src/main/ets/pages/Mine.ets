@@ -8,7 +8,6 @@ import { HdsNavigation, HdsNavigationTitleMode, HdsNavigationMenuContentOptions,
 import { bundleManager, common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { AppContainer } from '../data/AppContainer';
-import { WebAccount } from '../data/WebAccount';
 import { NetProxy } from '../service/PlatformServices';
 import { frostTitleBarStyle } from '../view/FrostScaffold';
 import { Theme, toast } from '../view/Common';
@@ -26,17 +25,11 @@ export struct MinePage {
   @State savedCount: number = 0;
   @State updateDesc: string = '检查 GitHub Releases 新版本';
   @StorageLink('savedVersion') @Watch('onSavedChanged') savedVersion: number = 0;
-  /** 小红书账号登录状态（网页会话注入；安卓 WebAccountCard 同款展示） */
-  @State account: WebAccount | null = null;
   /** 主滚动容器控制器（HdsNavigation bindToScrollable 官方滚动源绑定） */
   private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.savedCount = AppContainer.get().saved.getAll().length;
-    this.account = AppContainer.get().webAccount.get();
-    AppContainer.get().webAccount.onChange((a: WebAccount | null): void => {
-      this.account = a;
-    });
   }
 
   onSavedChanged(): void {
@@ -156,39 +149,29 @@ export struct MinePage {
     HdsNavigation() {
       Scroll(this.scroller) {
         Column({ space: 12 }) {
-          // 小红书账号登录状态卡（安卓 WebAccountCard 一比一）：
-          // 圆形头像（远程头像优先）+ 昵称 / 未登录 + 点击进入网页登录
+          // 平台帖子统计入口卡：按平台查看照片/视频数量
           Row({ space: 14 }) {
-            Stack() {
-              if (this.account !== null && this.account.avatar.length > 0) {
-                Image(this.account.avatar)
-                  .width(48)
-                  .height(48)
-                  .borderRadius(24)
-                  .objectFit(ImageFit.Cover)
-              } else {
-                SymbolGlyph($r('sys.symbol.person_crop_circle_fill_1'))
-                  .fontSize(26)
-                  .fontColor(['#FFFFFF'])
-              }
+            Row() {
+              SymbolGlyph($r('sys.symbol.picture'))
+                .fontSize(22)
+                .fontColor([Theme.textPrimary])
             }
-            .width(48)
-            .height(48)
-            .borderRadius(24)
-            .backgroundColor(Theme.accent)
-            .clip(true)
+            .width(40)
+            .height(40)
+            .borderRadius(12)
+            .backgroundColor(Theme.pageBg)
+            .justifyContent(FlexAlign.Center)
 
             Column({ space: 3 }) {
-              Text(this.account !== null && this.account.nickname.length > 0 ?
-                this.account.nickname : '小红书账号')
+              Text('平台帖子统计')
                 .fontSize(16)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(this.account !== null ? '已登录 · 点击管理会话' : '未登录 · 点击登录提升解析成功率')
+              Text('小红书 / 抖音 / Instagram / X 照片视频数量')
                 .fontSize(12)
                 .fontColor(Theme.textSecondary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
@@ -202,7 +185,7 @@ export struct MinePage {
           .borderRadius(18)
           .backgroundColor(Theme.cardBg)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/WebSession' });
+            router.pushUrl({ url: 'pages/PlatformStats' });
           })
 
           // 功能列表卡片

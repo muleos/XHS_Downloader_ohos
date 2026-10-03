@@ -8,6 +8,7 @@
     "pages/NetworkSettings",
     "pages/History",
     "pages/WebSession",
-    "pages/WebExtract"
+    "pages/WebExtract",
+    "pages/PlatformStats"
   ]
 }
