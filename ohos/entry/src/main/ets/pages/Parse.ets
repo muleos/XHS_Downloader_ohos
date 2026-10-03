@@ -99,25 +99,14 @@ export struct ParsePage {
       toast($r('app.string.index_input_invalid'));
       return;
     }
-    // 多平台：解析 + 直接下载进媒体库
+    // 多平台：进下载任务队列（与小红书同列表，v1.23.3）
     this.resolving = true;
-    this.progressText = '解析中…';
     try {
-      const result = await app.multi.save(getContext(this), target, (text: string): void => {
-        this.progressText = text;
-      });
-      if (result.ok) {
-        toast(result.message);
-        this.input = '';
-      } else {
-        toast(result.message);
-        // 直连被平台风控时，引导用内置浏览器内核提取
-        if (result.webFallback && result.sourceUrl.length > 0) {
-          this.offerWebExtract(result.sourceUrl);
-        }
-      }
+      app.queue.enqueueMultiPlatform([target]);
+      toast('已加入下载队列，可在任务列表查看进度');
+      this.input = '';
     } catch (e) {
-      toast('下载失败：' + (e instanceof Error ? e.message : String(e)));
+      toast('加入队列失败：' + (e instanceof Error ? e.message : String(e)));
     } finally {
       this.resolving = false;
       this.progressText = '';
@@ -190,9 +179,9 @@ export struct ParsePage {
 
   /**
    * 批量识别（v1.20.0，安卓版同款）：提取输入中的全部支持链接，
-   * 小红书链接批量入队，其余平台（抖音/IG/TikTok/X）逐个解析下载。
+   * 小红书链接批量入 xhs 队列，其余平台（抖音/IG/TikTok/X）入多平台任务队列。
    */
-  private async parseBatch(): Promise<void> {
+  private parseBatch(): void {
     const raw = this.input.trim();
     const links = MediaParser.extractAnyLinks(raw).filter((l: string): boolean =>
       MediaParser.detect(l) !== Platform.UNKNOWN);
@@ -203,39 +192,16 @@ export struct ParsePage {
     const app = AppContainer.get();
     const xhsLinks = links.filter((l: string): boolean => MediaParser.detect(l) === Platform.XHS);
     const otherLinks = links.filter((l: string): boolean => MediaParser.detect(l) !== Platform.XHS);
-    this.resolving = true;
-    let okCount = 0;
-    let failCount = 0;
-    try {
-      // 小红书：批量入队（队列自动逐个解析）
-      if (xhsLinks.length > 0) {
-        app.queue.enqueue(xhsLinks.join('\n'), false);
-        okCount += xhsLinks.length;
-      }
-      // 其余平台：逐个解析 + 下载
-      for (let i = 0; i < otherLinks.length; i++) {
-        this.progressText = `批量解析 ${i + 1}/${otherLinks.length}…`;
-        try {
-          const result = await app.multi.save(getContext(this), otherLinks[i], (text: string): void => {
-            this.progressText = `(${i + 1}/${otherLinks.length}) ${text}`;
-          });
-          if (result.ok) {
-            okCount++;
-          } else {
-            failCount++;
-          }
-        } catch (e) {
-          failCount++;
-        }
-      }
-      toast(`批量识别 ${links.length} 个链接：成功 ${okCount}${failCount > 0 ? '，失败 ' + failCount : ''}`);
-      if (okCount > 0) {
-        this.input = '';
-      }
-    } finally {
-      this.resolving = false;
-      this.progressText = '';
+    // 小红书：批量入队（队列自动逐个解析）
+    if (xhsLinks.length > 0) {
+      app.queue.enqueue(xhsLinks.join('\n'), false);
     }
+    // 其余平台：入多平台任务队列（后台解析下载，列表可见进度）
+    if (otherLinks.length > 0) {
+      app.queue.enqueueMultiPlatform(otherLinks);
+    }
+    toast(`已加入下载队列 ${links.length} 个链接`);
+    this.input = '';
   }
 
   /** force=true（顶栏剪贴板按钮）：覆盖输入框；false（首次挂载）：仅空输入时预填 */

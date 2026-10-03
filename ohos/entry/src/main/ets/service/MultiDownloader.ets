@@ -58,8 +58,13 @@ export class MultiDownloader {
     return this.saveParsed(parsed, context, onProgress);
   }
 
-  /** 已有解析结果时直接下载并入库（网页提取通道使用）。 */
-  async saveParsed(parsed: ParseResult, context: Context, onProgress: (text: string) => void): Promise<MultiDownloadResult> {
+  /**
+   * 已有解析结果时直接下载并入库（网页提取通道 / 队列多平台任务使用）。
+   * onStep（可选）：每完成一个媒体回调 (done, total)，返回 false 中止下载
+   * （下载任务列表的取消/暂停依赖此钩子）；中止时已下载文件仍会入库。
+   */
+  async saveParsed(parsed: ParseResult, context: Context, onProgress: (text: string) => void,
+    onStep?: (done: number, total: number) => boolean): Promise<MultiDownloadResult> {
     const out = new MultiDownloadResult();
     if (parsed.mediaItems.length === 0) {
       out.message = '没有可下载的媒体';
@@ -89,25 +94,39 @@ export class MultiDownloader {
       item.width = parsed.mediaItems[0].width;
       item.height = parsed.mediaItems[0].height;
     }
-    const seen: string[] = [];
-    let index = 0;
+    // 预统计需下载条数（关闭的媒体类型不计入进度分母）
+    let eligible = 0;
     for (const media of parsed.mediaItems) {
-      // 「媒体与格式」开关：关闭图片/视频下载时跳过对应类型（设置仅用于新任务）
       if (media.type === WorkType.VIDEO && !MultiDownloader.videoDownload) {
-        index++;
         continue;
       }
       if (media.type !== WorkType.VIDEO && !MultiDownloader.imageDownload) {
-        index++;
         continue;
       }
-      onProgress(`下载中 ${index + 1}/${parsed.mediaItems.length}`);
+      eligible++;
+    }
+    const seen: string[] = [];
+    let done = 0;
+    let aborted = false;
+    for (const media of parsed.mediaItems) {
+      // 「媒体与格式」开关：关闭图片/视频下载时跳过对应类型（设置仅用于新任务）
+      if (media.type === WorkType.VIDEO && !MultiDownloader.videoDownload) {
+        continue;
+      }
+      if (media.type !== WorkType.VIDEO && !MultiDownloader.imageDownload) {
+        continue;
+      }
+      // 队列任务取消/暂停钩子：返回 false 时中止（已下载文件保留入库）
+      if (onStep !== undefined && !onStep(done, eligible)) {
+        aborted = true;
+        break;
+      }
+      onProgress(`下载中 ${done + 1}/${eligible}`);
       const isVideo = media.type === WorkType.VIDEO;
       const ext = isVideo ? 'mp4' : 'jpg';
-      const name = MultiDownloader.buildFileName(item, index, ext);
+      const name = MultiDownloader.buildFileName(item, done, ext);
       const path = await MultiDownloader.downloadTo(media.url, dir, name);
       if (path.length === 0) {
-        index++;
         continue;
       }
       // 首个带尺寸的媒体项回填 item 尺寸（瀑布流比例用）
@@ -122,7 +141,19 @@ export class MultiDownloader {
       if (item.coverPath.length === 0 && !isVideo) {
         item.coverPath = path;
       }
-      index++;
+      done++;
+    }
+    // 任务被取消/暂停：已下载的文件仍入库，返回取消语义
+    if (aborted) {
+      if (item.mediaPaths.length > 0) {
+        this.store.add(item);
+        out.ok = true;
+        out.itemId = item.id;
+        out.message = `已取消下载，已保存 ${item.mediaPaths.length} 个文件到应用媒体库`;
+      } else {
+        out.message = '已取消下载';
+      }
+      return out;
     }
     // Cover for video notes.
     if (item.coverPath.length === 0 && parsed.coverUrl.length > 0) {

@@ -59,6 +59,14 @@
             "actions": ["action.system.home"]
           },
           {
+            "actions": ["ohos.want.action.sendData"],
+            "uris": [
+              { "scheme": "file", "utd": "general.text" },
+              { "scheme": "file", "utd": "general.plain-text" },
+              { "scheme": "file", "utd": "general.hyperlink" }
+            ]
+          },
+          {
             "entities": ["entity.system.browsable"],
             "actions": ["ohos.want.action.viewData"],
             "uris": [
@@ -66,7 +74,20 @@
               { "scheme": "https", "host": "www.xiaohongshu.com" },
               { "scheme": "https", "host": "xhslink.com" },
               { "scheme": "https", "host": "xhslink.cn" },
-              { "scheme": "https", "host": "rednote.com" }
+              { "scheme": "https", "host": "rednote.com" },
+              { "scheme": "https", "host": "douyin.com" },
+              { "scheme": "https", "host": "www.douyin.com" },
+              { "scheme": "https", "host": "v.douyin.com" },
+              { "scheme": "https", "host": "www.iesdouyin.com" },
+              { "scheme": "https", "host": "instagram.com" },
+              { "scheme": "https", "host": "www.instagram.com" },
+              { "scheme": "https", "host": "instagr.am" },
+              { "scheme": "https", "host": "x.com" },
+              { "scheme": "https", "host": "twitter.com" },
+              { "scheme": "https", "host": "t.co" },
+              { "scheme": "https", "host": "tiktok.com" },
+              { "scheme": "https", "host": "www.tiktok.com" },
+              { "scheme": "https", "host": "vm.tiktok.com" }
             ]
           }
         ]

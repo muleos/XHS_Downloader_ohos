@@ -233,22 +233,44 @@ export struct HomePage {
     toast(`已删除 ${doomed.length} 个作品`);
   }
 
-  /** 长按单帖删除（二次确认后执行）。 */
-  private longPressDelete(item: SavedItem): void {
+  /** 长按单帖：分享原链接 / 删除（v1.23.3 增加分享）。 */
+  private longPressActions(item: SavedItem): void {
     promptAction.showActionMenu({
-      title: '删除「' + (item.title.length > 0 ? item.title : '未命名作品') + '」？删除后不可恢复。',
+      title: item.title.length > 0 ? item.title : '未命名作品',
       buttons: [
+        { text: '分享原链接', color: Theme.textPrimary },
         { text: '删除', color: Theme.red },
         { text: '取消', color: Theme.textSecondary }
       ]
     }).then((r: promptAction.ActionMenuSuccessResponse): void => {
       if (r.index === 0) {
+        this.shareSourceLink(item);
+      } else if (r.index === 1) {
         this.deleteFiles(item);
         AppContainer.get().saved.remove(item.id);
         toast('已删除');
       }
     }).catch((): void => {
     });
+  }
+
+  /** 系统分享面板分享作品原始链接。 */
+  private async shareSourceLink(item: SavedItem): Promise<void> {
+    if (item.sourceUrl.length === 0) {
+      toast('该作品没有原始链接');
+      return;
+    }
+    try {
+      const data = new systemShare.SharedData({
+        utd: uniformTypeDescriptor.UniformDataType.PLAIN_TEXT,
+        content: item.sourceUrl
+      });
+      const controller = new systemShare.ShareController(data);
+      await controller.show(getContext(this) as common.UIAbilityContext,
+        { previewMode: systemShare.SharePreviewMode.DEFAULT });
+    } catch (e) {
+      toast('分享失败：' + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   /**
@@ -398,7 +420,7 @@ export struct HomePage {
                       this.openItem(item);
                     },
                     onLongPress: (): void => {
-                      this.longPressDelete(item);
+                      this.longPressActions(item);
                     }
                   })
                 }, (item: SavedItem) => 'l_' + item.id)
@@ -417,7 +439,7 @@ export struct HomePage {
                       this.openItem(item);
                     },
                     onLongPress: (): void => {
-                      this.longPressDelete(item);
+                      this.longPressActions(item);
                     }
                   })
                 }, (item: SavedItem) => 'r_' + item.id)

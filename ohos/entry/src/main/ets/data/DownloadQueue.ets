@@ -20,6 +20,7 @@ import { XhsHttpClient } from '../core/XhsHttpClient';
 import { XhsUrlParser } from '../core/XhsUrlParser';
 import { MediaFileType } from '../core/MediaFileType';
 import { SavedItem, Platform, WorkType } from '../model/SaveModels';
+import { MediaParser } from '../service/PlatformServices';
 import { wantAgent } from '@kit.AbilityKit';
 
 export class QueueListenerState {
@@ -146,6 +147,103 @@ export class DownloadQueue {
     this.drain();
   }
 
+  /**
+   * 多平台任务入队（v1.23.3：抖音/Instagram/TikTok/X 也进下载任务列表）。
+   * 任务照常进 TaskStore（列表展示、批量管理、暂停/取消），解析与下载由
+   * MultiDownloader 异步执行并回写任务进度；不走 xhs 的 drain 循环
+   * （noteType='multi' 的任务被 nextQueued 跳过）。
+   */
+  enqueueMultiPlatform(links: string[]): number[] {
+    const ids: number[] = [];
+    for (const link of links) {
+      const task = this.store.create(link);
+      task.session.rawInput = link;
+      task.session.options = this.currentOptions();
+      task.noteType = 'multi';
+      task.noteTitle = link;
+      task.status = TaskStatus.QUEUED;
+      this.store.touch(task);
+      ids.push(task.id);
+    }
+    this.notify();
+    for (const id of ids) {
+      this.runMultiPlatform(id);
+    }
+    return ids;
+  }
+
+  /** 多平台任务执行体：解析 → 逐个下载 → 回写任务状态/进度。 */
+  private async runMultiPlatform(taskId: number): Promise<void> {
+    const task = this.store.byId(taskId);
+    if (task === null) {
+      return;
+    }
+    task.active = true;
+    const finish = (status: TaskStatus, message: string, done: number, total: number): void => {
+      const cur = this.store.byId(taskId);
+      if (cur === null) {
+        return;
+      }
+      if (cur.status === TaskStatus.CANCELLED || cur.status === TaskStatus.PAUSED) {
+        // 用户已取消/暂停：保留状态，仅回写进度
+      } else {
+        cur.status = status;
+      }
+      cur.completedFiles = done;
+      cur.totalFiles = total > 0 ? total : cur.totalFiles;
+      cur.progress = total > 0 ? Math.floor(done * 100 / total) : 0;
+      cur.errorMessage = message;
+      cur.active = false;
+      this.store.touch(cur);
+      this.notify();
+    };
+    try {
+      task.status = TaskStatus.RESOLVING;
+      task.errorMessage = '';
+      this.store.touch(task);
+      this.notify();
+      const parsed = await MediaParser.parse(task.noteUrl);
+      if (parsed.status !== 0 || parsed.mediaItems.length === 0) {
+        finish(TaskStatus.FAILED, parsed.message.length > 0 ? parsed.message : '解析失败：没有可下载的媒体',
+          0, 0);
+        return;
+      }
+      const cur1 = this.store.byId(taskId);
+      if (cur1 === null) {
+        return;
+      }
+      cur1.noteTitle = parsed.title.length > 0 ?
+        (parsed.title.length > 60 ? parsed.title.substring(0, 60) : parsed.title) : task.noteUrl;
+      cur1.totalFiles = parsed.mediaItems.length;
+      cur1.status = TaskStatus.DOWNLOADING;
+      this.store.touch(cur1);
+      this.notify();
+      const result = await AppContainer.get().multi.saveParsed(parsed, this.requireContext(),
+        (): void => {
+        },
+        (done: number, total: number): boolean => {
+          const cur = this.store.byId(taskId);
+          if (cur === null || cur.status === TaskStatus.CANCELLED || cur.status === TaskStatus.PAUSED) {
+            return false;
+          }
+          cur.completedFiles = done;
+          cur.progress = total > 0 ? Math.floor(done * 100 / total) : 0;
+          this.notifyThrottled();
+          return true;
+        });
+      if (result.ok) {
+        finish(TaskStatus.COMPLETED, '', parsed.mediaItems.length, parsed.mediaItems.length);
+      } else {
+        const cur2 = this.store.byId(taskId);
+        const partial = cur2 !== null && cur2.completedFiles > 0;
+        finish(partial ? TaskStatus.PARTIAL : TaskStatus.FAILED, result.message,
+          cur2 !== null ? cur2.completedFiles : 0, parsed.mediaItems.length);
+      }
+    } catch (e) {
+      finish(TaskStatus.FAILED, e instanceof Error ? e.message : String(e), 0, 0);
+    }
+  }
+
   cancel(taskId: number): void {
     const task = this.store.byId(taskId);
     if (task === null) {
@@ -219,13 +317,29 @@ export class DownloadQueue {
       task.status = TaskStatus.QUEUED;
       this.store.touch(task);
       this.notify();
-      this.drain();
+      // 多平台任务不走 drain（xhs 解析器不认非小红书链接）
+      if (task.noteType === 'multi') {
+        this.runMultiPlatform(taskId);
+      } else {
+        this.drain();
+      }
     }
   }
 
   retry(taskId: number): void {
     const task = this.store.byId(taskId);
     if (task === null) {
+      return;
+    }
+    if (task.noteType === 'multi') {
+      // 多平台任务：重置为重新解析下载（MultiDownloader 全量重跑）
+      task.status = TaskStatus.QUEUED;
+      task.errorMessage = '';
+      task.completedFiles = 0;
+      task.progress = 0;
+      this.store.touch(task);
+      this.notify();
+      this.runMultiPlatform(taskId);
       return;
     }
     for (const res of task.resources) {
@@ -305,6 +419,10 @@ export class DownloadQueue {
 
   private nextQueued(): DownloadTask | null {
     for (const task of this.store.all()) {
+      // 多平台任务（noteType='multi'）由 runMultiPlatform 自行驱动，不进 xhs drain
+      if (task.noteType === 'multi') {
+        continue;
+      }
       if (task.status === TaskStatus.QUEUED || task.status === TaskStatus.DOWNLOADING ||
         task.status === TaskStatus.RESOLVING) {
         return task;
