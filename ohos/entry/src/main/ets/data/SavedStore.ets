@@ -79,6 +79,23 @@ export class SavedStore {
     AppStorage.setOrCreate('savedVersion', Date.now());
   }
 
+  /** 批量删除（收藏页批量管理）：一次 persist + 一次 savedVersion 通知。 */
+  removeBatch(ids: string[]): void {
+    if (ids.length === 0) {
+      return;
+    }
+    const doomed: Set<string> = new Set<string>(ids);
+    const next: SavedItem[] = [];
+    for (const it of this.items) {
+      if (!doomed.has(it.id)) {
+        next.push(it);
+      }
+    }
+    this.items = next;
+    this.persist();
+    AppStorage.setOrCreate('savedVersion', Date.now());
+  }
+
   private persist(): void {
     if (this.prefs === null) {
       return;

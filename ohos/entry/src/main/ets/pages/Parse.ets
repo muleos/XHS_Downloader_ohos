@@ -2,13 +2,15 @@
  * 解析页：粘贴分享链接 → 识别平台 → 小红书走原解析/选择流程，
  * 抖音/Instagram/TikTok/X 走多平台解析并直接下载进媒体库。
  */
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
+import { HdsNavigation, HdsNavigationTitleMode, HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions } from '@kit.UIDesignKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { AppContainer } from '../data/AppContainer';
 import { QueueListenerState } from '../data/DownloadQueue';
-import { DownloadTask, TaskStatus } from '../data/TaskStore';
+import { DownloadTask, TaskStatus, ResourceState } from '../data/TaskStore';
+import { frostTitleBarStyle } from '../view/FrostScaffold';
 import { Theme, toast } from '../view/Common';
-import { XhsUrlParser } from '../core/XhsUrlParser';
 import { XhsResolveException, ResolveFailure } from '../core/XhsContentRepository';
 import { MediaParser } from '../service/PlatformServices';
 import { Platform } from '../model/SaveModels';
@@ -24,6 +26,8 @@ export struct ParsePage {
   @State resolving: boolean = false;
   @State progressText: string = '';
   @State queueState: QueueListenerState = new QueueListenerState();
+  /** 主滚动容器控制器（HdsNavigation bindToScrollable 官方滚动源绑定） */
+  private scroller: Scroller = new Scroller();
   /** 首页解析圆钮的跨页请求：非空 = 待解析的分享文本 */
   @StorageLink('parseRequest') @Watch('onParseRequest') parseRequest: string = '';
 
@@ -72,6 +76,11 @@ export struct ParsePage {
     const raw = this.input.trim();
     if (raw.length === 0) {
       toast($r('app.string.index_input_invalid'));
+      return;
+    }
+    // 批量模式：识别输入里的全部链接逐个处理（v1.20.0 批量识别）
+    if (this.batchMode) {
+      await this.parseBatch();
       return;
     }
     const app = AppContainer.get();
@@ -151,10 +160,20 @@ export struct ParsePage {
       const note = await app.repo.resolve(link, app.settings.get().downloadOptions.useWebSession,
         app.settings.get().downloadOptions.timeoutSeconds);
       const taskId = app.queue.enqueueForSelection(note);
-      router.pushUrl({
-        url: 'pages/NoteDetail',
-        params: { 'taskId': taskId, 'note': note.toBundle() } as Record<string, Object>
-      });
+      // 选择性下载关闭：不进选择页，直接下载全部媒体（安卓版同款语义）
+      if (!app.settings.get().selectiveDownload) {
+        const all: number[] = [];
+        for (let i = 0; i < note.items.length; i++) {
+          all.push(i);
+        }
+        app.queue.confirmSelection(taskId, all);
+        toast($r('app.string.index_resolve_ok') + '，已开始下载全部媒体');
+      } else {
+        router.pushUrl({
+          url: 'pages/NoteDetail',
+          params: { 'taskId': taskId, 'note': note.toBundle() } as Record<string, Object>
+        });
+      }
       this.input = '';
     } catch (e) {
       toast(this.failureMessage(e instanceof Error ? e : new Error(String(e))));
@@ -165,49 +184,108 @@ export struct ParsePage {
     }
   }
 
+  /**
+   * 批量识别（v1.20.0，安卓版同款）：提取输入中的全部支持链接，
+   * 小红书链接批量入队，其余平台（抖音/IG/TikTok/X）逐个解析下载。
+   */
   private async parseBatch(): Promise<void> {
     const raw = this.input.trim();
-    if (XhsUrlParser.extractLinks(raw).length === 0) {
+    const links = MediaParser.extractAnyLinks(raw).filter((l: string): boolean =>
+      MediaParser.detect(l) !== Platform.UNKNOWN);
+    if (links.length === 0) {
       toast($r('app.string.index_input_invalid'));
       return;
     }
-    const ids = AppContainer.get().queue.enqueue(raw, false);
-    toast($r('app.string.index_resolve_ok') + ' ×' + ids.length);
-    this.input = '';
+    const app = AppContainer.get();
+    const xhsLinks = links.filter((l: string): boolean => MediaParser.detect(l) === Platform.XHS);
+    const otherLinks = links.filter((l: string): boolean => MediaParser.detect(l) !== Platform.XHS);
+    this.resolving = true;
+    let okCount = 0;
+    let failCount = 0;
+    try {
+      // 小红书：批量入队（队列自动逐个解析）
+      if (xhsLinks.length > 0) {
+        app.queue.enqueue(xhsLinks.join('\n'), false);
+        okCount += xhsLinks.length;
+      }
+      // 其余平台：逐个解析 + 下载
+      for (let i = 0; i < otherLinks.length; i++) {
+        this.progressText = `批量解析 ${i + 1}/${otherLinks.length}…`;
+        try {
+          const result = await app.multi.save(getContext(this), otherLinks[i], (text: string): void => {
+            this.progressText = `(${i + 1}/${otherLinks.length}) ${text}`;
+          });
+          if (result.ok) {
+            okCount++;
+          } else {
+            failCount++;
+          }
+        } catch (e) {
+          failCount++;
+        }
+      }
+      toast(`批量识别 ${links.length} 个链接：成功 ${okCount}${failCount > 0 ? '，失败 ' + failCount : ''}`);
+      if (okCount > 0) {
+        this.input = '';
+      }
+    } finally {
+      this.resolving = false;
+      this.progressText = '';
+    }
   }
 
-  private readClipboardAndPrefill(): void {
+  /** force=true（顶栏剪贴板按钮）：覆盖输入框；false（首次挂载）：仅空输入时预填 */
+  private readClipboardAndPrefill(force: boolean): void {
+    // 「手动输入链接」开启时不自动提取剪贴板（设置 → 剪贴板）
+    if (!force && AppContainer.get().settings.get().manualInputLinks) {
+      return;
+    }
     try {
       const data = pasteboard.getSystemPasteboard().getDataSync();
       const text = data.getPrimaryText();
       // 任意平台链接都预填（小红书 / 抖音 / Instagram / TikTok / X）
       if (text !== null && text !== undefined && MediaParser.firstSupportedLink(text).length > 0 &&
-        this.input.length === 0) {
+        (force || this.input.length === 0)) {
         this.input = text;
+        toast('已从剪贴板填入链接');
+      } else if (force) {
+        toast('剪贴板未识别到支持的链接');
       }
     } catch (e) {
+      if (force) {
+        toast('剪贴板读取失败：' + (e instanceof Error ? e.message : String(e)));
+      }
     }
   }
 
-  build() {
-    Column() {
-      Row() {
-        Column({ space: 2 }) {
-          Text('解析')
-            .fontSize(26)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Theme.textPrimary)
-          Text('支持小红书 / 抖音 / Instagram / TikTok / X')
-            .fontSize(13)
-            .fontColor(Theme.textSecondary)
+  /** 顶栏 menu：剪贴板预填（与收藏页官方 menu 槽位同款） */
+  private menuOptions(): HdsNavigationMenuContentOptions {
+    const clipIcon: SymbolGlyphModifier = new SymbolGlyphModifier($r('sys.symbol.doc_plaintext'));
+    clipIcon.fontColor([Theme.textPrimary]);
+    const items: HdsNavigationMenuItemOptions[] = [
+      {
+        content: {
+          icon: clipIcon,
+          action: (): void => {
+            this.readClipboardAndPrefill(true);
+          }
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
       }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: this.topAvoid + 10, bottom: 10 })
+    ];
+    return { value: items };
+  }
 
-      Scroll() {
+  /** 清空输入框（v1.20.0 修复：此前该按钮误绑成批量模式开关） */
+  private clearInput(): void {
+    this.input = '';
+    this.progressText = '';
+  }
+
+  build() {
+    // 与收藏页同款官方顶栏骨架：HdsNavigation MINI + frost 四件套，
+    // 三个一级页面顶栏高度与水平对齐由官方组件统一。
+    HdsNavigation() {
+      Scroll(this.scroller) {
         Column({ space: 12 }) {
           TextArea({ text: this.input, placeholder: $r('app.string.index_input_hint') })
             .fontSize(15)
@@ -227,9 +305,21 @@ export struct ParsePage {
               .onClick(() => {
                 this.parse();
               })
-            Button($r('app.string.common_clear'), { buttonStyle: ButtonStyleMode.NORMAL })
+            // 批量识别开关（安卓版同款）
+            Button(this.batchMode ? '退出批量' : '批量', { buttonStyle: ButtonStyleMode.NORMAL })
+              .fontSize(13)
+              .fontColor(this.batchMode ? Theme.accent : Theme.textPrimary)
+              .enabled(!this.resolving)
               .onClick(() => {
                 this.batchMode = !this.batchMode;
+                toast(this.batchMode ? '批量模式：一次粘贴多个链接逐个识别' : '已退出批量模式');
+              })
+            // 清空输入（v1.20.0 修复失效）
+            Button($r('app.string.common_clear'), { buttonStyle: ButtonStyleMode.NORMAL })
+              .fontSize(13)
+              .enabled(!this.resolving)
+              .onClick(() => {
+                this.clearInput();
               })
           }
           .width('100%')
@@ -245,17 +335,34 @@ export struct ParsePage {
           }, (task: DownloadTask) => task.id.toString() + '_' + task.status)
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: 96, top: 4 })
+        .padding({ left: 16, right: 16, bottom: 96, top: this.topAvoid + 88 })
       }
-      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .align(Alignment.Top)
+      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .onAppear(() => {
-        this.readClipboardAndPrefill();
+        this.readClipboardAndPrefill(false);
       })
     }
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      content: {
+        title: { mainTitle: '解析', subTitle: '支持小红书 / 抖音 / Instagram / TikTok / X' },
+        menu: this.menuOptions()
+      },
+      style: frostTitleBarStyle(Theme.pageBg, Theme.textPrimary, Theme.textSecondary)
+    })
+    .titleMode(HdsNavigationTitleMode.MINI)
+    .hideBackButton(true)
+    .bindToScrollable([this.scroller])
     .padding({ left: this.leftAvoid, right: this.rightAvoid })
     .width('100%')
     .height('100%')
+    // 根背景保持透明：透出 Index 的沉浸光晕层（项目约定）
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
   }
 }
 
@@ -263,6 +370,26 @@ export struct ParsePage {
 export struct TaskRow {
   task: DownloadTask = new DownloadTask();
   speedBps: number = 0;
+
+  /** 媒体卡片信息（设置 → 下载选项）：1 文件体积 / 2 分辨率（有数据时） */
+  private mediaInfo(): string {
+    const mode = AppContainer.get().settings.get().mediaCardInfo;
+    if (mode === 1) {
+      let bytes = 0;
+      for (const res of this.task.resources) {
+        bytes += res.bytes;
+      }
+      return bytes > 0 ? formatSize(bytes) : '';
+    }
+    if (mode === 2) {
+      for (const res of this.task.resources) {
+        if (res.state === ResourceState.COMPLETED && res.tempPath.length > 0) {
+          return this.task.noteType === 'video' ? '视频' : '图片';
+        }
+      }
+    }
+    return '';
+  }
 
   private statusLabel(): ResourceStr {
     switch (this.task.status) {
@@ -311,7 +438,8 @@ export struct TaskRow {
         .color(Theme.red)
 
       Row({ space: 8 }) {
-        Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}`)
+        Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}` +
+          (this.mediaInfo().length > 0 ? '  ' + this.mediaInfo() : ''))
           .fontSize(11)
           .fontColor(Theme.textSecondary)
           .layoutWeight(1)
@@ -366,4 +494,14 @@ export function formatSpeed(n: number): string {
     return (n / 1024).toFixed(0) + 'KB/s';
   }
   return (n / 1048576).toFixed(1) + 'MB/s';
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes <= 0) {
+    return '';
+  }
+  if (bytes < 1048576) {
+    return (bytes / 1024).toFixed(0) + 'KB';
+  }
+  return (bytes / 1048576).toFixed(1) + 'MB';
 }

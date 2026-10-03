@@ -276,6 +276,7 @@ export class DownloadOptions {
     o.videoCoverDownload = node.optBool('videoCoverDownload', false);
     o.commentImageDownload = node.optBool('commentImageDownload', false);
     o.livePhotoMode = node.optNumber('livePhotoMode', LivePhotoMode.MERGED) as LivePhotoMode;
+    o.livePhotoFormat = node.optNumber('livePhotoFormat', LivePhotoFormat.AUTO) as LivePhotoFormat;
     o.skipExisting = node.optBool('skipExisting', false);
     o.authorArchive = node.optBool('authorArchive', false);
     o.noteArchive = node.optBool('noteArchive', false);
@@ -297,6 +298,7 @@ export class DownloadOptions {
       'videoCoverDownload': this.videoCoverDownload,
       'commentImageDownload': this.commentImageDownload,
       'livePhotoMode': this.livePhotoMode,
+      'livePhotoFormat': this.livePhotoFormat,
       'skipExisting': this.skipExisting,
       'authorArchive': this.authorArchive,
       'noteArchive': this.noteArchive,
@@ -320,6 +322,12 @@ export class AppSettings {
   showClipboardBubble: boolean = true;
   autoReadClipboard: boolean = false;
   manualInputLinks: boolean = false;
+  /** 选择性下载：先预览缩略图再选择下载（关闭 = 解析后直接下载全部） */
+  selectiveDownload: boolean = true;
+  /** 调试通知：显示详细的下载调试信息 */
+  debugNotify: boolean = false;
+  /** 媒体卡片信息：0 不显示 / 1 文件体积 / 2 分辨率 */
+  mediaCardInfo: number = 1;
   customStorageUri: string = '';
   customStorageDisplayName: string = '';
   checkExistingFilesBeforeSave: boolean = true;
@@ -338,6 +346,9 @@ export class AppSettings {
     s.showClipboardBubble = node.optBool('showClipboardBubble', true);
     s.autoReadClipboard = node.optBool('autoReadClipboard', false);
     s.manualInputLinks = node.optBool('manualInputLinks', false);
+    s.selectiveDownload = node.optBool('selectiveDownload', true);
+    s.debugNotify = node.optBool('debugNotify', false);
+    s.mediaCardInfo = node.optNumber('mediaCardInfo', 1);
     s.customStorageUri = node.optString('customStorageUri', '');
     s.customStorageDisplayName = node.optString('customStorageDisplayName', '');
     s.checkExistingFilesBeforeSave = node.optBool('checkExistingFilesBeforeSave', true);
@@ -355,6 +366,9 @@ export class AppSettings {
       'showClipboardBubble': this.showClipboardBubble,
       'autoReadClipboard': this.autoReadClipboard,
       'manualInputLinks': this.manualInputLinks,
+      'selectiveDownload': this.selectiveDownload,
+      'debugNotify': this.debugNotify,
+      'mediaCardInfo': this.mediaCardInfo,
       'customStorageUri': this.customStorageUri,
       'customStorageDisplayName': this.customStorageDisplayName,
       'checkExistingFilesBeforeSave': this.checkExistingFilesBeforeSave

@@ -9,6 +9,7 @@ import { WebAccountRepository } from './WebAccount';
 import { SavedStore } from './SavedStore';
 import { MultiDownloader } from '../service/MultiDownloader';
 import { NetProxy } from '../service/PlatformServices';
+import { AppSettings } from '../core/models';
 
 export class AppContainer {
   private static inst: AppContainer | null = null;
@@ -28,7 +29,7 @@ export class AppContainer {
   private constructor() {
     this.repo = new XhsContentRepository(this.client);
     this.queue = new DownloadQueue(this.client);
-    this.multi = new MultiDownloader(this.saved);
+    this.multi = new MultiDownloader(this.saved, this.records);
   }
 
   static get(): AppContainer {
@@ -51,9 +52,21 @@ export class AppContainer {
     // 设置页「代理/代理下载」→ 海外平台（X/IG/TikTok）解析与下载走代理
     NetProxy.apply(this.settings.get().downloadOptions.proxy,
       this.settings.get().downloadOptions.proxyDownload);
+    this.syncNaming(this.settings.get());
     this.settings.onChange((s): void => {
       NetProxy.apply(s.downloadOptions.proxy, s.downloadOptions.proxyDownload);
+      this.syncNaming(s);
     });
     this.ready = true;
+  }
+
+  /** 自定义命名模板同步给下载器（静态字段，避免 MultiDownloader 反向依赖容器） */
+  private syncNaming(s: AppSettings): void {
+    MultiDownloader.namingUseCustom = s.useCustomNamingFormat;
+    MultiDownloader.namingTemplate = s.customNamingTemplate.length > 0 ?
+      s.customNamingTemplate : '{postId}';
+    // 「媒体与格式」下载图片/视频开关同步给多平台下载器
+    MultiDownloader.imageDownload = s.downloadOptions.imageDownload;
+    MultiDownloader.videoDownload = s.downloadOptions.videoDownload;
   }
 }

@@ -4,6 +4,7 @@
  * status vocabulary as the Android app.
  */
 import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { Context } from '@kit.AbilityKit';
 import { DownloadOptions, ResolvedNote } from '../core/models';
 
@@ -91,7 +92,7 @@ export class TaskStore {
       const buf = new ArrayBuffer(stat.size);
       fileIo.readSync(f.fd, buf);
       fileIo.closeSync(f.fd);
-      const raw = JSON.parse(String(buf)) as Record<string, Object>;
+      const raw = JSON.parse(util.TextDecoder.create('utf-8').decodeToString(new Uint8Array(buf))) as Record<string, Object>;
       this.tasks = (raw['tasks'] as DownloadTask[]) ?? [];
       this.nextId = Number(raw['nextId'] ?? this.tasks.length + 1);
       this.authors = (raw['authors'] as Record<string, string>) ?? {};

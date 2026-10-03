@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { AppContainer } from '../data/AppContainer';
 import { MediaSaver } from '../data/MediaSaver';
@@ -127,6 +127,29 @@ struct NoteDetail {
     });
   }
 
+  /** 长按正文弹出操作菜单（v1.20.0：复制文案 / 复制标题）。 */
+  private showTextActions(): void {
+    const isDark: boolean = AppStorage.get<boolean>('isDarkMode') === true;
+    const btnColor: string = isDark ? '#FFFFFF' : '#E5000000';
+    promptAction.showActionMenu({
+      title: '文本操作',
+      buttons: [
+        { text: '复制文案', color: btnColor },
+        { text: '复制标题', color: btnColor }
+      ]
+    }).then((result: promptAction.ActionMenuSuccessResponse): void => {
+      if (result.index === 0) {
+        this.copyText();
+      } else if (result.index === 1) {
+        const paste = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.note.title);
+        pasteboard.getSystemPasteboard().setData(paste).then(() => {
+          toast($r('app.string.common_copied'));
+        });
+      }
+    }).catch((): void => {
+    });
+  }
+
   build() {
     Column() {
       TitleBar({ title: this.note.title.length > 0 ? this.note.title : this.note.noteId, showBack: true })
@@ -172,6 +195,10 @@ struct NoteDetail {
             .fontSize(14)
             .fontColor(Theme.textPrimary)
             .width('100%')
+            .gesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+              .onAction(() => {
+                this.showTextActions();
+              }))
 
           Row({ space: 8 }) {
             Button($r('app.string.detail_copy_text'), { buttonStyle: ButtonStyleMode.NORMAL })

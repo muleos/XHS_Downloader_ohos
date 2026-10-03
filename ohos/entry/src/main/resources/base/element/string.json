@@ -663,6 +663,14 @@
     {
       "name": "perm_media_save_reason",
       "value": "保存下载的图片和视频到相册"
+    },
+    {
+      "name": "history_clear",
+      "value": "清空"
+    },
+    {
+      "name": "perm_pasteboard_reason",
+      "value": "读取剪贴板中的分享链接，用于一键解析保存"
     }
   ]
 }

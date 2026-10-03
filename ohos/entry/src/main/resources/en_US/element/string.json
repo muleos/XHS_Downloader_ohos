@@ -663,6 +663,14 @@
     {
       "name": "perm_media_save_reason",
       "value": "Save downloaded images and videos to the gallery"
+    },
+    {
+      "name": "history_clear",
+      "value": "Clear"
+    },
+    {
+      "name": "perm_pasteboard_reason",
+      "value": "Read share links from the clipboard for one-tap parsing"
     }
   ]
 }

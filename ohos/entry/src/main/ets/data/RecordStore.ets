@@ -1,33 +1,29 @@
 /**
- * Download records — file-backed port of data/tasks (DownloadSessionDao subset).
+ * Download records — persistent store (SavedStore 同款 preferences 方案)。
+ *
+ * v1.19.0 根因修复：旧实现用 fileIo + JSON.parse(String(buf)) 读回文件，
+ * ArkTS 中 String(ArrayBuffer) 得到 "[object ArrayBuffer]"，JSON.parse 必抛
+ * → 重启后下载历史恒为空。改用 preferences（收藏库已验证同方案）。
  * Records store logical facts only: no signed URLs, no credentials, no paths.
  */
-import { fileIo } from '@kit.CoreFileKit';
+import { preferences } from '@kit.ArkData';
 import { Context } from '@kit.AbilityKit';
-import { DownloadRecord, csvCell } from '../core/models';
+import { DownloadRecord } from '../core/models';
+
+const STORE_NAME: string = 'download_records_store';
+const KEY_ROWS: string = 'download_records';
 
 export class RecordStore {
-  private file: string = '';
+  private prefs: preferences.Preferences | null = null;
   private records: DownloadRecord[] = [];
 
   async init(context: Context): Promise<void> {
-    this.file = context.filesDir + '/download_records.json';
-    await this.reload();
-  }
-
-  private async reload(): Promise<void> {
-    this.records = [];
     try {
-      const stat = fileIo.statSync(this.file);
-      if (stat.size <= 0) {
-        return;
-      }
-      const file = fileIo.openSync(this.file, fileIo.OpenMode.READ_ONLY);
-      const buf = new ArrayBuffer(stat.size);
-      fileIo.readSync(file.fd, buf);
-      fileIo.closeSync(file.fd);
-      const parsed: Array<Record<string, Object>> = JSON.parse(String(buf)) as Array<Record<string, Object>>;
-      for (const row of parsed) {
+      this.prefs = preferences.getPreferencesSync(context, { name: STORE_NAME });
+      const raw = this.prefs.getSync(KEY_ROWS, '[]') as string;
+      const rows = JSON.parse(raw) as Array<Record<string, Object>>;
+      this.records = [];
+      for (const row of rows) {
         this.records.push(new DownloadRecord(
           Number(row['taskId']),
           String(row['noteId']),
@@ -43,26 +39,27 @@ export class RecordStore {
     }
   }
 
-  private async persist(): Promise<void> {
-    const rows: Array<Record<string, Object>> = [];
-    for (const r of this.records) {
-      rows.push({
-        'taskId': r.taskId,
-        'noteId': r.noteId,
-        'author': r.author,
-        'title': r.title,
-        'mediaId': r.mediaId,
-        'state': r.state,
-        'createdAt': r.createdAt
-      });
+  private persist(): void {
+    if (this.prefs === null) {
+      return;
     }
     try {
-      const file = fileIo.openSync(this.file,
-        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      fileIo.writeSync(file.fd, JSON.stringify(rows));
-      fileIo.closeSync(file.fd);
+      const rows: Array<Record<string, Object>> = [];
+      for (const r of this.records) {
+        rows.push({
+          'taskId': r.taskId,
+          'noteId': r.noteId,
+          'author': r.author,
+          'title': r.title,
+          'mediaId': r.mediaId,
+          'state': r.state,
+          'createdAt': r.createdAt
+        });
+      }
+      this.prefs.putSync(KEY_ROWS, JSON.stringify(rows));
+      this.prefs.flush();
     } catch (e) {
-      // Ignore write failures; records are best-effort.
+      // Best-effort persistence.
     }
   }
 
@@ -80,28 +77,35 @@ export class RecordStore {
     return max + 1;
   }
 
-  async add(record: DownloadRecord): Promise<void> {
+  add(record: DownloadRecord): void {
     this.records.unshift(record);
-    await this.persist();
+    this.persist();
   }
 
-  async updateState(taskId: number, mediaId: string, state: string): Promise<void> {
+  updateState(taskId: number, mediaId: string, state: string): void {
     for (const r of this.records) {
       if (r.taskId === taskId && r.mediaId === mediaId) {
         r.state = state;
       }
     }
-    await this.persist();
+    this.persist();
   }
 
-  async remove(taskId: number): Promise<void> {
+  remove(taskId: number): void {
     this.records = this.records.filter((r: DownloadRecord): boolean => r.taskId !== taskId);
-    await this.persist();
+    this.persist();
   }
 
-  async clear(): Promise<void> {
+  /** 批量删除：一次删除多个任务的记录并持久化（History 批量管理用） */
+  removeBatch(taskIds: number[]): void {
+    const doomed: Set<number> = new Set<number>(taskIds);
+    this.records = this.records.filter((r: DownloadRecord): boolean => !doomed.has(r.taskId));
+    this.persist();
+  }
+
+  clear(): void {
     this.records = [];
-    await this.persist();
+    this.persist();
   }
 
   exportText(json: boolean): string {

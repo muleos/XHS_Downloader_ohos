@@ -10,6 +10,8 @@ import { util } from '@kit.ArkTS';
 import { ParseResult, SavedItem, WorkType } from '../model/SaveModels';
 import { MediaParser, NetProxy } from './PlatformServices';
 import { SavedStore } from '../data/SavedStore';
+import { RecordStore } from '../data/RecordStore';
+import { DownloadRecord } from '../core/models';
 
 export class MultiDownloadResult {
   ok: boolean = false;
@@ -22,9 +24,18 @@ export class MultiDownloadResult {
 
 export class MultiDownloader {
   private store: SavedStore;
+  /** 下载记录 store（v1.19.0：多平台下载也写历史，此前只有小红书队列写） */
+  private records: RecordStore | null = null;
+  /** 自定义命名（安卓 NamingFormat 移植；由 AppContainer 从设置同步，避免循环依赖） */
+  static namingUseCustom: boolean = false;
+  static namingTemplate: string = '{postId}';
+  /** 「媒体与格式」下载开关（设置页同步）：关闭后跳过对应类型的媒体 */
+  static imageDownload: boolean = true;
+  static videoDownload: boolean = true;
 
-  constructor(store: SavedStore) {
+  constructor(store: SavedStore, records: RecordStore | null = null) {
     this.store = store;
+    this.records = records;
   }
 
   /** Parse + download + register. Returns user-facing message. */
@@ -81,10 +92,19 @@ export class MultiDownloader {
     const seen: string[] = [];
     let index = 0;
     for (const media of parsed.mediaItems) {
+      // 「媒体与格式」开关：关闭图片/视频下载时跳过对应类型（设置仅用于新任务）
+      if (media.type === WorkType.VIDEO && !MultiDownloader.videoDownload) {
+        index++;
+        continue;
+      }
+      if (media.type !== WorkType.VIDEO && !MultiDownloader.imageDownload) {
+        index++;
+        continue;
+      }
       onProgress(`下载中 ${index + 1}/${parsed.mediaItems.length}`);
       const isVideo = media.type === WorkType.VIDEO;
       const ext = isVideo ? 'mp4' : 'jpg';
-      const name = `${stamp}_${index}.${ext}`;
+      const name = MultiDownloader.buildFileName(item, index, ext);
       const path = await MultiDownloader.downloadTo(media.url, dir, name);
       if (path.length === 0) {
         index++;
@@ -120,10 +140,81 @@ export class MultiDownloader {
       return out;
     }
     this.store.add(item);
+    // 下载历史持久化记录（与小红书队列同格式；taskId 用记录 store 自增 id）
+    if (this.records !== null) {
+      const recId = this.records.nextTaskId();
+      this.records.add(new DownloadRecord(recId, MultiDownloader.extractPostId(item.sourceUrl, item.id),
+        item.author, item.title, '', 'downloaded', Date.now()));
+    }
     out.ok = true;
     out.itemId = item.id;
     out.message = `已保存 ${item.mediaPaths.length} 个文件到应用媒体库`;
     return out;
+  }
+
+  /**
+   * 自定义命名模板（安卓 NoteOutput.fileName 一比一）：
+   * {username}{userId}{title}{postId}{publishTime}{index}{index_padded}{downloadTimestamp}，
+   * 未开启自定义时用 {postId}；恒追加 _NN 序号后缀防冲突。
+   */
+  private static buildFileName(item: SavedItem, index: number, ext: string): string {
+    const seq = String(index + 1);
+    const postId = MultiDownloader.extractPostId(item.sourceUrl, item.id);
+    const publishTime = MultiDownloader.formatTime(item.createTime);
+    const values: Record<string, string> = {
+      'username': item.author,
+      'userId': '',
+      'title': item.title,
+      'postId': postId,
+      'publishTime': publishTime,
+      'index': seq,
+      'index_padded': seq.padStart(2, '0'),
+      'downloadTimestamp': String(item.createTime)
+    };
+    const template = MultiDownloader.namingUseCustom ? MultiDownloader.namingTemplate : '{postId}';
+    let base = template.replace(/\{([a-zA-Z_]+)\}/g, (m0: string, key: string): string => {
+      const v = values[key];
+      return v === undefined ? m0 : v;
+    });
+    // 记录时间/序号兜底：模板全部命中为空时退回时间戳，保证文件名非空
+    if (base.replace(/[^A-Za-z0-9\u4e00-\u9fa5]/g, '').length === 0) {
+      base = String(item.createTime);
+    }
+    return MultiDownloader.safePart(base, postId) + '_' + seq.padStart(2, '0') + '.' + ext;
+  }
+
+  /** 文件名安全化（安卓 safePart 移植）：非法字符替换、去首尾点、UTF-8 160 字节截断。 */
+  private static safePart(value: string, fallback: string): string {
+    const clean = value.replace(/[\u0000-\u001f\\/:*?"<>|]/g, '_').trim().replace(/^\.+|\.+$/g, '');
+    let out = '';
+    for (const ch of clean) {
+      if (out.length + ch.length > 150) {
+        break;
+      }
+      out += ch;
+    }
+    return out.length > 0 ? out : fallback;
+  }
+
+  /** 从分享链接提取作品 ID：xhs explore 24 位 hex / 通用末段路径；短链取不到时退回 item.id。 */
+  private static extractPostId(url: string, fallback: string): string {
+    const m = url.match(/(?:explore|discovery\/item|status|note|p|reel|tv)\/([0-9A-Za-z_-]+)/);
+    if (m !== null) {
+      return m[1] as string;
+    }
+    const hex = url.match(/[0-9a-fA-F]{24}/);
+    if (hex !== null) {
+      return hex[0];
+    }
+    return fallback;
+  }
+
+  /** createTime → yyyy-MM-dd_HH-mm-ss（publishTime 占位用） */
+  private static formatTime(ms: number): string {
+    const d = new Date(ms);
+    const p = (n: number): string => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-` +
+      `${p(d.getMinutes())}-${p(d.getSeconds())}`;
   }
 
   /** 按目标 host 补 Referer：X/IG CDN 拒绝无来源下载。 */

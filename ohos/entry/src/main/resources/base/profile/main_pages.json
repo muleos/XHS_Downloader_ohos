@@ -3,6 +3,9 @@
     "pages/Index",
     "pages/NoteDetail",
     "pages/Settings",
+    "pages/MediaFormatSettings",
+    "pages/ArchiveSettings",
+    "pages/NetworkSettings",
     "pages/History",
     "pages/WebSession",
     "pages/WebExtract"

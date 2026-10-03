@@ -5,6 +5,7 @@
  */
 import { http } from '@kit.NetworkKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Context } from '@kit.AbilityKit';
 import { XhsHttpClient } from '../core/XhsHttpClient';
@@ -134,7 +135,7 @@ export class TransferEngine {
         const buf = new ArrayBuffer(stat.size);
         fileIo.readSync(f.fd, buf);
         fileIo.closeSync(f.fd);
-        const parsed = JSON.parse(String(buf)) as Checkpoint;
+        const parsed = JSON.parse(util.TextDecoder.create('utf-8').decodeToString(new Uint8Array(buf))) as Checkpoint;
         if (parsed.identity === TransferEngine.fingerprint(url) && partSize > 0) {
           cp = parsed;
         }

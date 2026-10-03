@@ -2,8 +2,15 @@ import { webview } from '@kit.ArkWeb';
 import { AppContainer } from '../data/AppContainer';
 import { Theme, TitleBar, toast } from '../view/Common';
 
-const XHS_HOME: string = 'https://www.xiaohongshu.com/';
+const XHS_HOME: string = 'https://www.xiaohongshu.com/explore';
 const SESSION_HOST: string = 'www.xiaohongshu.com';
+/**
+ * 电脑版 UA 登录（对齐安卓 XhsWebSession.desktopUserAgent：首段括号换桌面平台、
+ * 去掉 Mobile 标识）。桌面版网页登录后 cookie 与直连解析用的桌面会话一致，
+ * 且登录态更容易维持；移动版网页会跳转风控验证。
+ */
+const DESKTOP_UA: string =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 
 @Entry
 @Component
@@ -41,8 +48,7 @@ struct WebSession {
         .layoutWeight(1)
         .javaScriptAccess(true)
         .domStorageAccess(true)
-        .userAgent(
-          'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36')
+        .userAgent(DESKTOP_UA)
         .onControllerAttached(() => {
           // Attach web cookies into the session store on first sight.
         })

@@ -10,7 +10,7 @@
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsTabs, HdsTabsController, HdsTabsModifier, hdsMaterial } from '@kit.UIDesignKit';
 import { Theme } from '../view/Common';
-import { HomePage } from './Home';
+import { HomePage, ViewerHost } from './Home';
 import { ParsePage } from './Parse';
 import { MinePage } from './Mine';
 
@@ -173,6 +173,10 @@ struct Index {
       .onChange((index: number) => {
         this.currentTab = index;
       })
+
+      // ── 全窗查看器（v1.19.0 重构）：挂在 Index 根 Stack、盖住 HdsTabs，
+      // 彻底脱离 HdsNavigation 内容裁剪——底部小白条区域白条根治 ──
+      ViewerHost()
     }
     .width('100%')
     .height('100%')

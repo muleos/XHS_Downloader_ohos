@@ -1,5 +1,6 @@
 /** Port of data/account/WebAccountRepository.kt — display metadata only. */
 import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { Context } from '@kit.AbilityKit';
 
 export class WebAccount {
@@ -51,7 +52,7 @@ export class WebAccountRepository {
       const buf = new ArrayBuffer(stat.size);
       fileIo.readSync(f.fd, buf);
       fileIo.closeSync(f.fd);
-      this.account = WebAccountRepository.parse(String(buf));
+      this.account = WebAccountRepository.parse(util.TextDecoder.create('utf-8').decodeToString(new Uint8Array(buf)));
     } catch (e) {
       this.account = null;
     }

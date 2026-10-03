@@ -1,5 +1,6 @@
-import { UIAbility, AbilityConstant, Want } from '@kit.AbilityKit';
+import { UIAbility, AbilityConstant, Want, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { window } from '@kit.ArkUI';
 import { AppContainer } from '../data/AppContainer';
 
@@ -10,6 +11,24 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'onCreate');
     AppContainer.get().init(this.context);
+    // v1.19.0：启动即请求剪贴板读取权限（user_grant）。
+    // 缺权限时系统会弹一次性授权框，拒绝后 getData 返回空/报错 → 一键解析
+    // 一直提示「剪贴板为空」。显式申请并允许后读剪贴板才稳定。
+    this.requestPasteboardPermission();
+  }
+
+  private requestPasteboardPermission(): void {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const perms: Array<Permissions> = ['ohos.permission.READ_PASTEBOARD'];
+      atManager.requestPermissionsFromUser(this.context, perms).then((result) => {
+        hilog.info(DOMAIN, TAG, 'pasteboard perm results: %{public}s', JSON.stringify(result.authResults));
+      }).catch((err: BusinessError) => {
+        hilog.warn(DOMAIN, TAG, 'pasteboard perm err: %{public}s', JSON.stringify(err));
+      });
+    } catch (e) {
+      // 忽略：解析圆钮读取失败时仍会给用户明确提示
+    }
   }
 
   onDestroy(): void {
@@ -42,6 +61,11 @@ export default class EntryAbility extends UIAbility {
       mainWin.setWindowSystemBarProperties({
         statusBarContentColor: '#000000'
       });
+      // 「保持屏幕常亮」设置启动时生效（设置页切换时即时应用）
+      try {
+        mainWin.setWindowKeepScreenOn(AppContainer.get().settings.get().keepScreenOn);
+      } catch (e) {
+      }
     });
   }
 

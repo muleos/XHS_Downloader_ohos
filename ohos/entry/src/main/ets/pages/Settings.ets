@@ -1,18 +1,23 @@
-import { router } from '@kit.ArkUI';
+/**
+ * 设置主页（v1.20.0 精简重构）：对齐安卓版 SettingsActivity 一级结构 ——
+ * 下载选项（存储位置 / 媒体与格式 / 归档与记录 / 网络与会话 / 选择性下载 /
+ * 媒体卡片信息 / 调试通知 / 保持屏幕常亮）、剪贴板（手动输入链接）、
+ * 文件命名。具体开关下沉到三个二级页（MediaFormat / Archive / Network）。
+ */
+import { router, window } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { bundleManager } from '@kit.AbilityKit';
 import { AppContainer } from '../data/AppContainer';
-import { MediaSaver, StoredOutput } from '../data/MediaSaver';
-import { AppSettings, VideoPreference, ImageFormat, LivePhotoMode } from '../core/models';
-import { Theme, SectionCard, toast } from '../view/Common';
+import { AppSettings } from '../core/models';
 import { FrostScaffold } from '../view/FrostScaffold';
+import { Theme, ToggleRow, SelectorRow, ValueRow, SheetState, OptionSheetOverlay, toast } from '../view/Common';
 
 @Entry
 @Component
 struct Settings {
-  @StorageLink('topAvoid') topAvoid: number = 0;
-  @StorageLink('bottomAvoid') bottomAvoid: number = 0;
-  @StorageLink('leftAvoid') leftAvoid: number = 0;
-  @StorageLink('rightAvoid') rightAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
+  /** 选项选择浮层（媒体卡片信息等） */
+  @State sheet: SheetState = new SheetState();
   /** 页面主滚动源（官方标题栏滚动渐变模糊绑定） */
   private topScroller: Scroller = new Scroller();
 
@@ -28,351 +33,231 @@ struct Settings {
     this.settings = await AppContainer.get().settings.update(mutate);
   }
 
+  private currentVersion(): string {
+    try {
+      const info = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      return info.versionName;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /** 保持屏幕常亮：立即应用到窗口（App 前台时防止自动锁屏） */
+  private applyKeepScreenOn(on: boolean): void {
+    try {
+      window.getLastWindow(getContext(this) as common.UIAbilityContext).then((w: window.Window): void => {
+        w.setWindowKeepScreenOn(on);
+      });
+    } catch (e) {
+      // 个别窗口态下设置失败不影响功能
+    }
+  }
+
+  private cardInfoLabels(): string[] {
+    return ['不显示', '文件体积', '分辨率'];
+  }
+
+  /** 打开选项浮层 */
+  private pick(title: string, labels: string[], selected: number,
+    onSel: (idx: number) => void): void {
+    this.sheet.title = title;
+    this.sheet.labels = labels;
+    this.sheet.selectedIndex = selected;
+    this.sheet.onSelect = onSel;
+    this.sheet.open = true;
+  }
+
   build() {
-    Column() {
-      // VHome 同款官方磨砂标题栏（FrostScaffold：官方材质 + 滚动渐变模糊）
+    Stack() {
+      Column() {
       FrostScaffold({ title: '设置', scroller: this.topScroller, bgColor: Theme.pageBg }) {
-      Scroll(this.topScroller) {
-        Column({ space: 12 }) {
-          SectionCard() {
-            Text($r('app.string.settings_media_format'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            SelectorRow({
-              label: $r('app.string.settings_video_preference'),
-              value: this.vpLabel(),
-              onTap: (): void => {
-                this.cycleVideoPreference();
-              }
-            })
-            SelectorRow({
-              label: $r('app.string.settings_image_format'),
-              value: this.ifLabel(),
-              onTap: (): void => {
-                this.cycleImageFormat();
-              }
-            })
-            ToggleRow({
-              label: $r('app.string.settings_video_cover'),
-              on: this.settings.downloadOptions.videoCoverDownload,
-              onChange: (v: boolean): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.videoCoverDownload = v;
-                });
-              }
-            })
-            ToggleRow({
-              label: $r('app.string.settings_comment_images'),
-              on: this.settings.downloadOptions.commentImageDownload,
-              onChange: (v: boolean): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.commentImageDownload = v;
-                });
-              }
-            })
-            SelectorRow({
-              label: $r('app.string.settings_live_photo_mode'),
-              value: this.lpLabel(),
-              onTap: (): void => {
-                this.cycleLiveMode();
-              }
-            })
-          }
-
-          SectionCard() {
-            Text($r('app.string.settings_task_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            ValueRow({
-              label: $r('app.string.settings_timeout_seconds'),
-              value: String(this.settings.downloadOptions.timeoutSeconds),
-              onChange: (v: string): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.timeoutSeconds = Math.max(5, Math.min(300, Number(v) || 45));
-                });
-              }
-            })
-            ValueRow({
-              label: $r('app.string.settings_max_retries'),
-              value: String(this.settings.downloadOptions.maxRetries),
-              onChange: (v: string): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.maxRetries = Math.max(0, Math.min(10, Number(v) || 3));
-                });
-              }
-            })
-          }
-
-          SectionCard() {
-            Text($r('app.string.settings_network_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            ToggleRow({
-              label: $r('app.string.settings_use_web_session'),
-              on: this.settings.downloadOptions.useWebSession,
-              onChange: (v: boolean): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.useWebSession = v;
-                });
-              }
-            })
-            ValueRow({
-              label: $r('app.string.settings_proxy'),
-              value: this.settings.downloadOptions.proxy,
-              onChange: (v: string): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.proxy = v.trim();
-                });
-              }
-            })
-            ToggleRow({
-              label: $r('app.string.settings_proxy_download'),
-              on: this.settings.downloadOptions.proxyDownload,
-              onChange: (v: boolean): void => {
-                this.set((s: AppSettings) => {
-                  s.downloadOptions.proxyDownload = v;
-                });
-              }
-            })
-          }
-
-          SectionCard() {
-            Text($r('app.string.settings_naming_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            ToggleRow({
-              label: $r('app.string.settings_use_custom_naming'),
-              on: this.settings.useCustomNamingFormat,
-              onChange: (v: boolean): void => {
-                this.set((s: AppSettings) => {
-                  s.useCustomNamingFormat = v;
-                });
-              }
-            })
-            ValueRow({
-              label: $r('app.string.settings_naming_template'),
-              value: this.settings.customNamingTemplate,
-              onChange: (v: string): void => {
-                this.set((s: AppSettings) => {
-                  s.customNamingTemplate = v;
-                });
-              }
-            })
-            Text($r('app.string.settings_naming_tokens'))
-              .fontSize(12)
+        Scroll(this.topScroller) {
+          Column({ space: 12 }) {
+            // ── 下载选项 ──
+            Text('下载选项')
+              .fontSize(13)
               .fontColor(Theme.textSecondary)
-          }
-
-          SectionCard() {
-            Text($r('app.string.settings_session_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            SelectorRow({
-              label: $r('app.string.settings_open_web_session'),
-              value: '',
-              onTap: (): void => {
-                router.pushUrl({ url: 'pages/WebSession' });
-              }
-            })
-            Button($r('app.string.settings_clear_session'), { buttonStyle: ButtonStyleMode.NORMAL })
-              .onClick(() => {
-                AppContainer.get().client.clearSession();
-                toast($r('app.string.settings_saved'));
+              .width('100%')
+              .margin({ left: 4 })
+            Column() {
+              SelectorRow({
+                label: '存储位置',
+                value: '当前使用默认存储位置',
+                valueColor: Theme.textSecondary,
+                onTap: (): void => {
+                  toast('作品保存到应用媒体库，可在收藏页查看');
+                }
               })
-          }
-
-          SectionCard() {
-            Text($r('app.string.settings_record_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            Row({ space: 8 }) {
-              Button($r('app.string.settings_export_json'), { buttonStyle: ButtonStyleMode.NORMAL })
-                .layoutWeight(1)
-                .onClick(() => {
-                  this.exportRecords(true);
-                })
-              Button($r('app.string.settings_export_csv'), { buttonStyle: ButtonStyleMode.NORMAL })
-                .layoutWeight(1)
-                .onClick(() => {
-                  this.exportRecords(false);
-                })
+              Divider().color(Theme.pageBg)
+              SelectorRow({
+                label: '媒体与格式',
+                value: '',
+                onTap: (): void => {
+                  router.pushUrl({ url: 'pages/MediaFormatSettings' });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              SelectorRow({
+                label: '归档与记录',
+                value: '',
+                onTap: (): void => {
+                  router.pushUrl({ url: 'pages/ArchiveSettings' });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              SelectorRow({
+                label: '网络与会话',
+                value: '',
+                onTap: (): void => {
+                  router.pushUrl({ url: 'pages/NetworkSettings' });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              ToggleRow({
+                label: '选择性下载',
+                desc: '先预览缩略图，再下载选中的媒体。关闭后解析完成直接下载全部。',
+                on: this.settings.selectiveDownload,
+                onChange: (v: boolean): void => {
+                  this.set((s: AppSettings) => {
+                    s.selectiveDownload = v;
+                  });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              SelectorRow({
+                label: '媒体卡片信息',
+                desc: '解析任务卡片上显示的信息',
+                value: this.cardInfoLabels()[this.settings.mediaCardInfo],
+                showArrow: false,
+                onTap: (): void => {
+                  this.pick('媒体卡片信息', this.cardInfoLabels(), this.settings.mediaCardInfo,
+                    (idx: number): void => {
+                      this.set((s: AppSettings) => {
+                        s.mediaCardInfo = idx;
+                      });
+                    });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              ToggleRow({
+                label: '调试通知',
+                desc: '显示详细的下载调试信息',
+                on: this.settings.debugNotify,
+                onChange: (v: boolean): void => {
+                  this.set((s: AppSettings) => {
+                    s.debugNotify = v;
+                  });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              ToggleRow({
+                label: '保持屏幕常亮',
+                desc: 'App 在前台时防止手机自动锁屏',
+                on: this.settings.keepScreenOn,
+                onChange: (v: boolean): void => {
+                  this.set((s: AppSettings) => {
+                    s.keepScreenOn = v;
+                  });
+                  this.applyKeepScreenOn(v);
+                }
+              })
             }
             .width('100%')
-            Button($r('app.string.settings_clear_records'), { buttonStyle: ButtonStyleMode.TEXTUAL })
-              .fontColor(Theme.red)
-              .onClick(() => {
-                AppContainer.get().records.clear();
-                toast($r('app.string.settings_saved'));
-              })
-          }
+            .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+            .borderRadius(16)
+            .backgroundColor(Theme.cardBg)
 
-          SectionCard() {
-            Text($r('app.string.settings_about_group'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-            Text($r('app.string.settings_about_source')).fontSize(12).fontColor(Theme.textSecondary)
-            Text($r('app.string.settings_about_upstream')).fontSize(12).fontColor(Theme.textSecondary)
+            // ── 剪贴板 ──
+            Text('剪贴板')
+              .fontSize(13)
+              .fontColor(Theme.textSecondary)
+              .width('100%')
+              .margin({ left: 4 })
+            Column() {
+              ToggleRow({
+                label: '手动输入链接',
+                desc: '开启后不再自动提取剪切板内容',
+                on: this.settings.manualInputLinks,
+                onChange: (v: boolean): void => {
+                  this.set((s: AppSettings) => {
+                    s.manualInputLinks = v;
+                  });
+                }
+              })
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+            .borderRadius(16)
+            .backgroundColor(Theme.cardBg)
+
+            // ── 文件命名 ──
+            Text('文件命名')
+              .fontSize(13)
+              .fontColor(Theme.textSecondary)
+              .width('100%')
+              .margin({ left: 4 })
+            Column() {
+              ToggleRow({
+                label: '自定义命名格式',
+                on: this.settings.useCustomNamingFormat,
+                onChange: (v: boolean): void => {
+                  this.set((s: AppSettings) => {
+                    s.useCustomNamingFormat = v;
+                  });
+                }
+              })
+              Divider().color(Theme.pageBg)
+              ValueRow({
+                label: '命名模板',
+                value: this.settings.customNamingTemplate,
+                onChange: (v: string): void => {
+                  this.set((s: AppSettings) => {
+                    s.customNamingTemplate = v;
+                  });
+                }
+              })
+              Text($r('app.string.settings_naming_tokens'))
+                .fontSize(12)
+                .fontColor(Theme.textSecondary)
+                .width('100%')
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+            .borderRadius(16)
+            .backgroundColor(Theme.cardBg)
+
+            // ── 关于 ──
+            Column({ space: 4 }) {
+              Text(`收藏 v${this.currentVersion()} · HarmonyOS`)
+                .fontSize(12)
+                .fontColor(Theme.textSecondary)
+              Text('基于开源项目 XHS_Downloader 移植')
+                .fontSize(11)
+                .fontColor(Theme.textSecondary)
+            }
+            .alignItems(HorizontalAlign.Center)
+            .width('100%')
+            .padding({ top: 8, bottom: this.bottomPad() })
           }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 8 })
         }
-        .padding({
-          left: this.leftAvoid > 0 ? this.leftAvoid : 12,
-          right: this.rightAvoid > 0 ? this.rightAvoid : 12,
-          top: this.topAvoid + 60,
-          bottom: this.bottomAvoid + 24
-        })
+        .scrollBar(BarState.Off)
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
       }
-      .scrollBar(BarState.Off)
-      .width('100%')
-      .height('100%')
-      .align(Alignment.Top)
       }
+
+      OptionSheetOverlay({ sheet: this.sheet })
     }
     .width('100%')
     .height('100%')
   }
 
-  private vpLabel(): ResourceStr {
-    switch (this.settings.downloadOptions.videoPreference) {
-      case VideoPreference.BITRATE:
-        return $r('app.string.settings_video_pref_bitrate');
-      case VideoPreference.SIZE:
-        return $r('app.string.settings_video_pref_size');
-      case VideoPreference.COMPATIBILITY:
-        return $r('app.string.settings_video_pref_compatibility');
-      default:
-        return $r('app.string.settings_video_pref_resolution');
-    }
-  }
-
-  private ifLabel(): ResourceStr {
-    switch (this.settings.downloadOptions.imageFormat) {
-      case ImageFormat.JPEG:
-        return 'JPEG';
-      case ImageFormat.PNG:
-        return 'PNG';
-      case ImageFormat.WEBP:
-        return 'WEBP';
-      default:
-        return $r('app.string.settings_image_format_auto');
-    }
-  }
-
-  private lpLabel(): ResourceStr {
-    switch (this.settings.downloadOptions.livePhotoMode) {
-      case LivePhotoMode.SEPARATE:
-        return $r('app.string.settings_live_mode_separate');
-      case LivePhotoMode.STILL:
-        return $r('app.string.settings_live_mode_still');
-      default:
-        return $r('app.string.settings_live_mode_merged');
-    }
-  }
-
-  private cycleVideoPreference(): void {
-    this.set((s: AppSettings) => {
-      const next = ((s.downloadOptions.videoPreference as number) + 1) % 4;
-      s.downloadOptions.videoPreference = next as VideoPreference;
-    });
-  }
-
-  private cycleImageFormat(): void {
-    this.set((s: AppSettings) => {
-      const next = ((s.downloadOptions.imageFormat as number) + 1) % 4;
-      s.downloadOptions.imageFormat = next as ImageFormat;
-    });
-  }
-
-  private cycleLiveMode(): void {
-    this.set((s: AppSettings) => {
-      const next = ((s.downloadOptions.livePhotoMode as number) + 1) % 3;
-      s.downloadOptions.livePhotoMode = next as LivePhotoMode;
-    });
-  }
-
-  private exportRecords(json: boolean): void {
-    const app = AppContainer.get();
-    const text = app.records.exportText(json);
-    const stamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 14);
-    const name = 'xhsdn_records_' + stamp + (json ? '.json' : '.csv');
-    MediaSaver.storeText(getContext(this), [], name, text).then((out: StoredOutput) => {
-      toast(out.skipped ? $r('app.string.error_network') : $r('app.string.common_saved'));
-    });
-  }
-}
-
-/**
- * 设置行组件（替代原 @Builder 按值传参）：
- * 自定义组件在父组件状态变化时会同步更新入参，实现实时刷新。
- */
-@Component
-struct SelectorRow {
-  label: ResourceStr = '';
-  value: ResourceStr = '';
-  onTap: () => void = (): void => {};
-
-  build() {
-    Row() {
-      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
-      Text(this.value).fontSize(14).fontColor(Theme.accent)
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(15)
-        .fontColor([Theme.textSecondary])
-        .margin({ left: 6 })
-    }
-    .width('100%')
-    .height(48)
-    .onClick(() => {
-      this.onTap();
-    })
-  }
-}
-
-/** 整行可点（48 高度热区），开关本身只做展示，避免与行点击重复触发。 */
-@Component
-struct ToggleRow {
-  label: ResourceStr = '';
-  on: boolean = false;
-  onChange: (v: boolean) => void = (): void => {};
-
-  build() {
-    Row() {
-      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: this.on })
-        .selectedColor(Theme.accent)
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height(48)
-    .onClick(() => {
-      this.onChange(!this.on);
-      toast($r('app.string.settings_saved'));
-    })
-  }
-}
-
-@Component
-struct ValueRow {
-  label: ResourceStr = '';
-  value: string = '';
-  onChange: (v: string) => void = (): void => {};
-
-  build() {
-    Row({ space: 8 }) {
-      Text(this.label).fontSize(15).fontColor(Theme.textPrimary).width(120)
-      TextInput({ text: this.value })
-        .fontSize(14)
-        .layoutWeight(1)
-        .backgroundColor(Theme.pageBg)
-        .onChange((v: string) => this.onChange(v))
-    }
-    .width('100%')
-    .height(48)
+  private bottomPad(): number {
+    const v = AppStorage.get<number>('bottomAvoid');
+    return (v === undefined ? 0 : v) + 24;
   }
 }

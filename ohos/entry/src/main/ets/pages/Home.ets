@@ -51,9 +51,10 @@ export struct HomePage {
   @State rightItems: SavedItem[] = [];
   // 写入 AppStorage：Index 据此在查看器打开时隐藏底部导航
   @StorageLink('viewerIndex') viewerIndex: number = -1;
-  @State confirmDelete: boolean = false;
-  @State saving: boolean = false;
   @StorageLink('savedVersion') @Watch('onSavedChanged') savedVersion: number = 0;
+  /** 批量管理模式（v1.20.0）：点击切换选中，底部出现删除所选操作条 */
+  @State batchMode: boolean = false;
+  @State selectedIds: string[] = [];
 
   /** 主滚动容器控制器（HdsNavigation bindToScrollable 官方滚动源绑定） */
   private feedScroller: Scroller = new Scroller();
@@ -162,14 +163,103 @@ export struct HomePage {
     return r === undefined ? 0 : r;
   }
 
-  /** 打开查看器（瀑布流卡片点击入口） */
+  /** 打开查看器（瀑布流卡片点击入口）：Index 层 ViewerHost 按 itemId 取项渲染 */
   private openItem(item: SavedItem): void {
+    if (this.batchMode) {
+      this.toggleSelect(item.id);
+      return;
+    }
     if (!item.hasMedia()) {
       toast('该作品没有可查看的文件');
       return;
     }
     this.viewerIndex = this.items.indexOf(item);
-    this.confirmDelete = false;
+    AppStorage.setOrCreate<string>('viewerItemId', item.id);
+  }
+
+  // ── 批量管理 / 删除（v1.20.0）──────────────────────────────────────
+
+  private isSelected(id: string): boolean {
+    return this.selectedIds.indexOf(id) >= 0;
+  }
+
+  private toggleSelect(id: string): void {
+    if (this.isSelected(id)) {
+      this.selectedIds = this.selectedIds.filter((v: string): boolean => v !== id);
+    } else {
+      this.selectedIds.push(id);
+    }
+  }
+
+  private toggleBatch(): void {
+    this.batchMode = !this.batchMode;
+    this.selectedIds = [];
+  }
+
+  private selectAll(): void {
+    if (this.selectedIds.length === this.items.length) {
+      this.selectedIds = [];
+      return;
+    }
+    const ids: string[] = [];
+    for (const it of this.items) {
+      ids.push(it.id);
+    }
+    this.selectedIds = ids;
+  }
+
+  /** 删除作品文件（媒体文件在应用沙箱 media 目录，随收藏一起清除）。 */
+  private deleteFiles(item: SavedItem): void {
+    for (const p of item.mediaPaths) {
+      try {
+        if (fileIo.accessSync(p)) {
+          fileIo.unlinkSync(p);
+        }
+      } catch (e) {
+      }
+    }
+    if (item.coverPath.length > 0) {
+      try {
+        if (fileIo.accessSync(item.coverPath)) {
+          fileIo.unlinkSync(item.coverPath);
+        }
+      } catch (e) {
+      }
+    }
+  }
+
+  private deleteSelected(): void {
+    if (this.selectedIds.length === 0) {
+      toast('请先选择要删除的作品');
+      return;
+    }
+    const doomed = this.selectedIds;
+    for (const it of this.items) {
+      if (doomed.indexOf(it.id) >= 0) {
+        this.deleteFiles(it);
+      }
+    }
+    AppContainer.get().saved.removeBatch(doomed);
+    this.selectedIds = [];
+    toast(`已删除 ${doomed.length} 个作品`);
+  }
+
+  /** 长按单帖删除（二次确认后执行）。 */
+  private longPressDelete(item: SavedItem): void {
+    promptAction.showActionMenu({
+      title: '删除「' + (item.title.length > 0 ? item.title : '未命名作品') + '」？删除后不可恢复。',
+      buttons: [
+        { text: '删除', color: Theme.red },
+        { text: '取消', color: Theme.textSecondary }
+      ]
+    }).then((r: promptAction.ActionMenuSuccessResponse): void => {
+      if (r.index === 0) {
+        this.deleteFiles(item);
+        AppContainer.get().saved.remove(item.id);
+        toast('已删除');
+      }
+    }).catch((): void => {
+    });
   }
 
   /**
@@ -181,20 +271,58 @@ export struct HomePage {
     this.readClipboardAndParse();
   }
 
+  /**
+   * 从剪贴板数据中提取可用文本：主记录纯文本 → 逐条记录（纯文本 / URI /
+   * HTML 里的首个链接）。分享面板复制的可能是 URI 或 HTML 卡片记录，
+   * 只读 getPrimaryText 会漏。
+   */
+  private pickClipboardText(data: pasteboard.PasteData): string {
+    const primary = data.getPrimaryText();
+    if (primary !== undefined && primary !== null && primary.trim().length > 0) {
+      return primary;
+    }
+    for (let i = 0; i < data.getRecordCount(); i++) {
+      const rec = data.getRecord(i);
+      if (rec === null || rec === undefined) {
+        continue;
+      }
+      if (rec.plainText !== undefined && rec.plainText !== null && rec.plainText.trim().length > 0) {
+        return rec.plainText;
+      }
+      // URI 型记录（分享面板常见）：uri 是 URI 对象，须 toString 判空
+      if (rec.uri !== undefined && rec.uri !== null) {
+        const u = rec.uri.toString();
+        if (u.length > 0) {
+          return u;
+        }
+      }
+      if (rec.htmlText !== undefined && rec.htmlText !== null && rec.htmlText.length > 0) {
+        const m = rec.htmlText.match(/https?:\/\/[^\s"'<>]+/);
+        if (m !== null) {
+          return m[0];
+        }
+      }
+    }
+    return '';
+  }
+
   private async readClipboardAndParse(): Promise<void> {
     let text = '';
+    let lastErr = '';
     try {
-      const data = await pasteboard.getSystemPasteboard().getData();
-      text = data.getPrimaryText() ?? '';
+      text = this.pickClipboardText(await pasteboard.getSystemPasteboard().getData());
     } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
       try {
-        text = pasteboard.getSystemPasteboard().getDataSync().getPrimaryText() ?? '';
+        text = this.pickClipboardText(pasteboard.getSystemPasteboard().getDataSync());
       } catch (err) {
-        text = '';
+        lastErr = err instanceof Error ? err.message : String(err);
       }
     }
     if (text.trim().length === 0) {
-      toast('剪贴板为空，请先在小红书等 App 复制分享链接');
+      toast(lastErr.length > 0 ?
+        `读取剪贴板失败：${lastErr}` :
+        '剪贴板为空，请先在小红书等 App 复制分享链接');
       AppStorage.setOrCreate<number>('tabRequest', 1);
       return;
     }
@@ -208,64 +336,12 @@ export struct HomePage {
     AppStorage.setOrCreate<number>('tabRequest', 1);
   }
 
-  private async saveCurrent(): Promise<void> {
-    if (this.viewerIndex < 0 || this.viewerIndex >= this.items.length) {
-      return;
-    }
-    const item = this.items[this.viewerIndex];
-    const files: FolderSaveRequest[] = [];
-    for (const p of item.mediaPaths) {
-      const f = new FolderSaveRequest();
-      f.path = p;
-      const slash = p.lastIndexOf('/');
-      const dot = p.lastIndexOf('.');
-      const ext = dot > slash ? p.substring(dot + 1) : 'jpg';
-      f.name = item.id + '_' + files.length + '.' + ext;
-      files.push(f);
-    }
-    this.saving = true;
-    try {
-      const saved = await MediaSaver.storeGalleryBatch(getContext(this), files);
-      if (saved > 0) {
-        toast(`已保存 ${saved} 个文件到相册`);
-      } else {
-        toast('已取消保存');
-      }
-    } catch (e) {
-      toast('保存失败：' + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      this.saving = false;
-    }
-  }
-
-  private deleteCurrent(): void {
-    if (this.viewerIndex < 0 || this.viewerIndex >= this.items.length) {
-      return;
-    }
-    const item = this.items[this.viewerIndex];
-    if (!this.confirmDelete) {
-      this.confirmDelete = true;
-      return;
-    }
-    for (const p of item.mediaPaths) {
-      try {
-        if (fileIo.accessSync(p)) {
-          fileIo.unlinkSync(p);
-        }
-      } catch (e) {
-      }
-    }
-    AppContainer.get().saved.remove(item.id);
-    this.confirmDelete = false;
-    this.viewerIndex = -1;
-    this.reload();
-    toast('已删除');
-  }
-
-  /** 官方 menu 槽位：解析 + 设置（symbol 须 modifier 显式染色，VHome P122 实锤） */
+  /** 官方 menu 槽位：解析 + 批量管理 + 设置（symbol 须 modifier 显式染色，VHome P122 实锤） */
   private menuOptions(): HdsNavigationMenuContentOptions {
     const linkIcon: SymbolGlyphModifier = new SymbolGlyphModifier($r('sys.symbol.link'));
     linkIcon.fontColor([Theme.textPrimary]);
+    const trashIcon: SymbolGlyphModifier = new SymbolGlyphModifier($r('sys.symbol.trash'));
+    trashIcon.fontColor([Theme.textPrimary]);
     const gearIcon: SymbolGlyphModifier = new SymbolGlyphModifier($r('sys.symbol.gearshape'));
     gearIcon.fontColor([Theme.textPrimary]);
     const items: HdsNavigationMenuItemOptions[] = [
@@ -274,6 +350,14 @@ export struct HomePage {
           icon: linkIcon,
           action: (): void => {
             this.quickParse();
+          }
+        }
+      },
+      {
+        content: {
+          icon: trashIcon,
+          action: (): void => {
+            this.toggleBatch();
           }
         }
       },
@@ -319,8 +403,13 @@ export struct HomePage {
                   FeedCard({
                     item: item,
                     ratio: this.clampRatio(item),
+                    batchMode: this.batchMode,
+                    selected: this.isSelected(item.id),
                     onOpen: (): void => {
                       this.openItem(item);
+                    },
+                    onLongPress: (): void => {
+                      this.longPressDelete(item);
                     }
                   })
                 }, (item: SavedItem) => 'l_' + item.id)
@@ -333,8 +422,13 @@ export struct HomePage {
                   FeedCard({
                     item: item,
                     ratio: this.clampRatio(item),
+                    batchMode: this.batchMode,
+                    selected: this.isSelected(item.id),
                     onOpen: (): void => {
                       this.openItem(item);
+                    },
+                    onLongPress: (): void => {
+                      this.longPressDelete(item);
                     }
                   })
                 }, (item: SavedItem) => 'r_' + item.id)
@@ -353,23 +447,41 @@ export struct HomePage {
           .height('100%')
         }
 
-        // 全屏查看器（打开时隐藏标题栏）
-        if (this.viewerIndex >= 0 && this.viewerIndex < this.items.length) {
-          MediaViewer({
-            item: this.items[this.viewerIndex],
-            confirmDelete: this.confirmDelete,
-            onClose: (): void => {
-              this.viewerIndex = -1;
-              this.confirmDelete = false;
-            },
-            onSaveAll: (): void => {
-              this.saveCurrent();
-            },
-            onDelete: (): void => {
-              this.deleteCurrent();
+        // 悬浮操作层：全高覆盖、空白区放行触摸（MediaViewer 覆盖层同款姿势）
+        Column() {
+          Blank()
+          // 批量操作条（毛玻璃；History 同款）
+          if (this.batchMode && this.selectedIds.length > 0) {
+            Row({ space: 12 }) {
+              Text(`已选 ${this.selectedIds.length} 个作品`)
+                .fontSize(13)
+                .fontColor(Theme.textPrimary)
+                .layoutWeight(1)
+              Text(this.selectedIds.length === this.items.length ? '取消全选' : '全选')
+                .fontSize(13)
+                .fontColor(Theme.textPrimary)
+                .onClick(() => {
+                  this.selectAll();
+                })
+              Button('删除所选', { buttonStyle: ButtonStyleMode.EMPHASIZED })
+                .fontSize(13)
+                .fontColor(Color.White)
+                .backgroundColor(Theme.accent)
+                .onClick(() => {
+                  this.deleteSelected();
+                })
             }
-          })
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 90 })
+            .backgroundColor('#F2FFFFFF')
+            .backgroundBlurStyle(BlurStyle.Regular)
+            .border({ width: 0.5, color: '#33FFFFFF' })
+            .alignItems(VerticalAlign.Center)
+          }
         }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
       }
       .width('100%')
       .height('100%')
@@ -422,7 +534,11 @@ struct FeedCard {
   item: SavedItem = new SavedItem();
   /** 预测量的封面高宽比（父组件双列分配启发式用，卡片本身按图片真实比例自适应） */
   @Prop ratio: number = 0;
+  /** 批量管理模式 + 选中态（@Prop 实时同步） */
+  @Prop batchMode: boolean = false;
+  @Prop selected: boolean = false;
   onOpen: () => void = (): void => {};
+  onLongPress: () => void = (): void => {};
 
   private fileUri(path: string): string {
     if (path.startsWith('file://') || path.startsWith('http')) {
@@ -458,6 +574,22 @@ struct FeedCard {
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .margin(8)
         }
+        // 批量态勾选圈（右上角）
+        if (this.batchMode) {
+          Stack() {
+            if (this.selected) {
+              SymbolGlyph($r('sys.symbol.checkmark'))
+                .fontSize(13)
+                .fontColor(['#FFFFFF'])
+            }
+          }
+          .width(24)
+          .height(24)
+          .borderRadius(12)
+          .backgroundColor(this.selected ? Theme.accent : '66FFFFFF')
+          .border({ width: 1.5, color: this.selected ? Theme.accent : '#FFFFFF' })
+          .margin(8)
+        }
       }
       .width('100%')
 
@@ -491,22 +623,29 @@ struct FeedCard {
     }
     .width('100%')
     .borderRadius(12)
-    .backgroundColor(Theme.cardBg)
+    .backgroundColor(this.selected ? Theme.selectedBg : Theme.cardBg)
     .clip(true)
     .onClick(() => {
       this.onOpen();
     })
+    .gesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      .onAction(() => {
+        this.onLongPress();
+      }))
   }
 }
 
 @Component
-struct MediaViewer {
+export struct MediaViewer {
   item: SavedItem = new SavedItem();
   confirmDelete: boolean = false;
   onClose: () => void = (): void => {};
   onSaveAll: () => void = (): void => {};
   onDelete: () => void = (): void => {};
   @State current: number = 0;
+  /** 挂载时向窗口实测的底部避让：AppStorage 的 bottomAvoid 可能在窗口避让区
+   *  就绪前写入 0，导致底部原帖文本被系统小白条区域截断遮挡——实测值兜底 */
+  @State bottomInset: number = 0;
   /** 当前图的缩放与平移（VHome 同构：仅当前页生效，其余页恒 1x/0 偏移） */
   @State zoomScale: number = 1;
   @State panX: number = 0;
@@ -534,6 +673,23 @@ struct MediaViewer {
 
   aboutToAppear(): void {
     this.setStatusBarContent(true);
+    this.measureBottomInset();
+  }
+
+  /** 实测底部小白条避让高度（vp），不依赖 AppStorage 的时序 */
+  private measureBottomInset(): void {
+    try {
+      const win = window.getLastWindow(getContext(this) as common.UIAbilityContext);
+      win.then((w: window.Window): void => {
+        const nav = w.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+        const sys = w.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+        const raw = Math.max(nav.bottomRect.height, sys.bottomRect.height);
+        const vp = Math.ceil(this.getUIContext().px2vp(raw));
+        this.bottomInset = Math.min(vp, 40);
+      });
+    } catch (e) {
+      // 取不到时退回 AppStorage 值（padding 取两者较大）
+    }
   }
 
   aboutToDisappear(): void {
@@ -1020,7 +1176,12 @@ struct MediaViewer {
         }
         .alignItems(HorizontalAlign.Start)
         .width('100%')
-        .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 16 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 10,
+          bottom: Math.max(this.bottomAvoid, this.bottomInset) + 16
+        })
       }
       .width('100%')
       .height('100%')
@@ -1032,5 +1193,128 @@ struct MediaViewer {
     .backgroundColor('#000000')
     // 黑底延伸到状态栏与底部小白条区域（小白条沉浸，无白边）
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+}
+
+/**
+ * 全窗查看器宿主（v1.19.0 重构，挂载在 Index 根 Stack）。
+ *
+ * 根因：旧方案把 MediaViewer 叠在 Home 的 HdsNavigation 内容区里，
+ * expandSafeArea 被官方容器的内容裁剪拦住，底部小白条区域永远盖不到；
+ * HdsTabs 悬浮岛用 barOpacity 0 换装隐藏后仍可能有材质残影 → 白色横条。
+ * 现在查看器上移到 Index 层全窗覆盖（VHome 独立 router 页同效），
+ * 与 HdsNavigation/HdsTabs 彻底解耦，黑底铺满包括小白条在内的全窗。
+ */
+@Component
+export struct ViewerHost {
+  /** Home.openItem 写入；-1 = 关闭 */
+  @StorageLink('viewerIndex') @Watch('resolveItem') viewerIndex: number = -1;
+  @StorageLink('viewerItemId') @Watch('resolveItem') viewerItemId: string = '';
+  /** 解析后的当前项（无效时为空 SavedItem，用 hasMedia 判定） */
+  @State viewerItem: SavedItem = new SavedItem();
+  @State confirmDelete: boolean = false;
+  @State saving: boolean = false;
+
+  /** 按 id 从收藏库取当前项（列表已去重，与序号解耦） */
+  resolveItem(): void {
+    if (this.viewerIndex < 0 || this.viewerItemId.length === 0) {
+      this.viewerItem = new SavedItem();
+      return;
+    }
+    const it = AppContainer.get().saved.byId(this.viewerItemId);
+    this.viewerItem = it !== null ? it : new SavedItem();
+  }
+
+  private close(): void {
+    this.viewerIndex = -1;
+    this.confirmDelete = false;
+    AppStorage.setOrCreate<string>('viewerItemId', '');
+  }
+
+  /** 保存当前作品全部媒体到相册（原 Home.saveCurrent 逻辑上移） */
+  private async saveAll(): Promise<void> {
+    const item = this.viewerItem;
+    if (!item.hasMedia() || this.saving) {
+      return;
+    }
+    const files: FolderSaveRequest[] = [];
+    for (const p of item.mediaPaths) {
+      const f = new FolderSaveRequest();
+      f.path = p;
+      const slash = p.lastIndexOf('/');
+      const dot = p.lastIndexOf('.');
+      const ext = dot > slash ? p.substring(dot + 1) : 'jpg';
+      f.name = item.id + '_' + files.length + '.' + ext;
+      files.push(f);
+    }
+    this.saving = true;
+    try {
+      const saved = await MediaSaver.storeGalleryBatch(getContext(this), files);
+      if (saved > 0) {
+        toast(`已保存 ${saved} 个文件到相册`);
+      } else {
+        toast('已取消保存');
+      }
+    } catch (e) {
+      toast('保存失败：' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** 删除当前作品（二次确认；原 Home.deleteCurrent 逻辑上移） */
+  private deleteCurrent(): void {
+    const item = this.viewerItem;
+    if (!item.hasMedia()) {
+      return;
+    }
+    if (!this.confirmDelete) {
+      this.confirmDelete = true;
+      return;
+    }
+    for (const p of item.mediaPaths) {
+      try {
+        if (fileIo.accessSync(p)) {
+          fileIo.unlinkSync(p);
+        }
+      } catch (e) {
+      }
+    }
+    AppContainer.get().saved.remove(item.id);
+    this.confirmDelete = false;
+    this.close();
+    toast('已删除');
+  }
+
+  build() {
+    if (this.viewerIndex >= 0 && this.viewerItem.hasMedia()) {
+      // 全窗黑底 + MediaViewer：位于 Index 根 Stack，盖住 Tabs 与一切下层内容，
+      // 黑底随根 Stack 延伸进状态栏/小白条区域，无任何浅色残条。
+      Stack() {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#000000')
+          .hitTestBehavior(HitTestMode.Block)
+
+        MediaViewer({
+          item: this.viewerItem,
+          confirmDelete: this.confirmDelete,
+          onClose: (): void => {
+            this.close();
+          },
+          onSaveAll: (): void => {
+            this.saveAll();
+          },
+          onDelete: (): void => {
+            this.deleteCurrent();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .alignContent(Alignment.Top)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    }
   }
 }

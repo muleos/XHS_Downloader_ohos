@@ -15,6 +15,14 @@
         "reason": "$string:perm_internet_reason"
       },
       {
+        "name": "ohos.permission.READ_PASTEBOARD",
+        "reason": "$string:perm_pasteboard_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      },
+      {
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
         "reason": "$string:perm_background_reason"
       },
