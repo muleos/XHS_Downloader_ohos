@@ -14,32 +14,65 @@ const MOBILE_UA: string = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X
   '(KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1';
 
 /**
- * 提取脚本（v1.20.0 强化）：
- *  - img 除 currentSrc/src 外解析 srcset（取最大宽度候选）——Instagram/微博
- *    等站点的 <img> 只有 srcset 没有可用 src，旧脚本因此识别不到图；
- *  - 自然宽度阈值降到 200（IG 竖图在窄视口下渲染宽度不足 320）；
- *  - og:image/og:video 恒收集（DOM 空时的最后兜底）。
+ * 提取脚本（v1.22.1 强化）：
+ *  - img: src/currentSrc/srcset(取最大宽度候选)/data-src 系懒加载属性全查；
+ *  - picture>source 的 srcset、内联 style 背景图（video/player 容器归视频）；
+ *  - 页面 HTML 反转义后正则扫 .mp4 直链（抖音等播放器用 blob: 地址，
+ *    真实直链藏在页内 JSON 里，这是抖音唯一有效通道）；
+ *  - og:image/og:video/twitter:image 兜底；blob:/data: 地址一律过滤。
  */
-const EXTRACT_JS: string = '(function(){try{var out={videos:[],images:[],title:document.title||""};' +
+const EXTRACT_JS: string = '(function(){try{' +
+  'var out={videos:[],images:[],title:document.title||"",imgs:0,vids:0};' +
+  'function clean(u){if(!u){return "";}' +
+  'u=String(u).replace(/\\\\u0026/g,"&").replace(/&amp;/g,"&").trim();' +
+  'if(u.indexOf("http")!==0){return "";}' +
+  'return u;}' +
+  'function uniq(arr,u){if(u&&arr.indexOf(u)<0){arr.push(u);}}' +
   'function pickSrcset(el){var ss=el.getAttribute("srcset");if(!ss){return "";}' +
   'var parts=ss.split(",");var best="";var bestW=0;' +
   'for(var i=0;i<parts.length;i++){var seg=parts[i].trim().split(/\\s+/);' +
-  'var u=seg[0];var w=0;if(seg[1]&&seg[1].indexOf("w")>0){w=parseInt(seg[1]);}' +
-  'else{w=i;}if(u&&w>=bestW){bestW=w;best=u;}}return best;}' +
-  'var vs=document.querySelectorAll("video");for(var i=0;i<vs.length;i++){var v=vs[i];' +
-  'if(v.src){out.videos.push(v.src);}if(v.currentSrc){out.videos.push(v.currentSrc);}' +
-  'var vp=pickSrcset(v);if(vp){out.videos.push(vp);}}' +
-  'var ss=document.querySelectorAll("source");for(var j=0;j<ss.length;j++){if(ss[j].src){out.videos.push(ss[j].src);}}' +
-  'var ms=document.querySelectorAll("meta");for(var k=0;k<ms.length;k++){var m=ms[k];' +
+  'var u=seg[0];var w=0;if(seg[1]&&seg[1].indexOf("w")>0){w=parseInt(seg[1]);}else{w=i;}' +
+  'if(u&&w>=bestW){bestW=w;best=u;}}return best;}' +
+  'function bgUrl(el){var st=el.getAttribute("style")||"";' +
+  'var m=st.match(/url\\(([^)]+)\\)/);return m?clean(m[1].replace(/["\']/g,"")):"";}' +
+  'var KS=["scontent","cdninstagram","fbcdn","xhscdn","xiaohongshu","sns-img","douyinpic",' +
+  '"douyinvod","aweme","byteimg","ixigua","twimg","tiktokcdn","akamaized","zjcdn"];' +
+  'function isMedia(u){if(!u){return false;}var s=u.toLowerCase();' +
+  'for(var i=0;i<KS.length;i++){if(s.indexOf(KS[i])>=0){return true;}}return false;}' +
+  'var vs=document.querySelectorAll("video");out.vids=vs.length;' +
+  'for(var i=0;i<vs.length;i++){var v=vs[i];' +
+  'uniq(out.videos,clean(v.src));uniq(out.videos,clean(v.currentSrc));' +
+  'uniq(out.videos,clean(v.getAttribute("data-src")));uniq(out.videos,pickSrcset(v));' +
+  'uniq(out.videos,bgUrl(v));}' +
+  'var srcs=document.querySelectorAll("source");' +
+  'for(var j=0;j<srcs.length;j++){uniq(out.videos,clean(srcs[j].src));}' +
+  'var ms=document.querySelectorAll("meta");' +
+  'for(var k=0;k<ms.length;k++){var m=ms[k];' +
   'var p=m.getAttribute("property")||m.getAttribute("name")||"";var c=m.getAttribute("content")||"";' +
-  'if((p==="og:video"||p==="og:video:url"||p==="og:video:secure_url"||p==="twitter:player:stream")&&c){out.videos.push(c);}' +
-  'if(p==="og:image"&&c){out.images.push(c);}if(p==="og:title"&&c){out.title=c;}}' +
-  'var im=document.querySelectorAll("img");for(var n=0;n<im.length;n++){var g=im[n];' +
-  'var u2=pickSrcset(g);if(!u2&&g.currentSrc){u2=g.currentSrc;}if(!u2&&g.src){u2=g.src;}' +
-  'if(!u2){continue;}' +
-  'if(g.naturalWidth>=200||u2.indexOf("cdninstagram")>=0||u2.indexOf("fbcdn")>=0||u2.indexOf("scontent")>=0){' +
-  'out.images.push(u2);}}' +
-  'return JSON.stringify(out);}catch(e){return JSON.stringify({videos:[],images:[],title:""});}})()';
+  'if((p==="og:video"||p==="og:video:url"||p==="og:video:secure_url"||p==="twitter:player:stream")&&c){uniq(out.videos,clean(c));}' +
+  'if((p==="og:image"||p==="twitter:image"||p==="twitter:image:src")&&c){uniq(out.images,clean(c));}' +
+  'if(p==="og:title"&&c){out.title=c;}}' +
+  'var im=document.querySelectorAll("img");out.imgs=im.length;' +
+  'for(var n=0;n<im.length;n++){var g=im[n];' +
+  'var u2=pickSrcset(g);' +
+  'if(!u2){u2=g.getAttribute("data-src")||g.getAttribute("data-original")||g.getAttribute("data-lazy-src")||"";}' +
+  'if(!u2&&g.currentSrc){u2=g.currentSrc;}' +
+  'if(!u2&&g.src){u2=g.src;}' +
+  'u2=clean(u2);if(!u2){continue;}' +
+  'if(g.naturalWidth>=200||isMedia(u2)){uniq(out.images,u2);}}' +
+  'var pics=document.querySelectorAll("picture source");' +
+  'for(var q=0;q<pics.length;q++){var u3=clean(pickSrcset(pics[q]));if(u3&&isMedia(u3)){uniq(out.images,u3);}}' +
+  'var bgs=document.querySelectorAll("[style*=background]");' +
+  'for(var d=0;d<bgs.length&&d<400;d++){var bu=bgUrl(bgs[d]);if(!bu){continue;}' +
+  'var cls=(bgs[d].className?String(bgs[d].className).toLowerCase():"");' +
+  'if(cls.indexOf("video")>=0||cls.indexOf("player")>=0){uniq(out.videos,bu);}' +
+  'else if(isMedia(bu)){uniq(out.images,bu);}}' +
+  'var html="";try{html=document.documentElement.innerHTML' +
+  '.split("\\\\u0026").join("&").split("\\\\/").join("/");}catch(e){}' +
+  'var re=/https?:\\/\\/[^" ]+?\\.mp4[^" ]*/g;' +
+  'var mm;var cnt=0;' +
+  'while((mm=re.exec(html))!==null&&cnt<40){uniq(out.videos,clean(mm[0]));cnt++;}' +
+  'return JSON.stringify(out);}catch(e){return JSON.stringify({videos:[],images:[],title:"",imgs:0,vids:0});}})()';
 
 /** 触发懒加载：滚到页底再回顶（Instagram/抖音 SPA 的图片进入视口才真正加载）。 */
 const SCROLL_JS: string = '(function(){try{window.scrollTo(0,document.body.scrollHeight);' +
@@ -90,7 +123,16 @@ struct WebExtract {
 
   private applyJson(raw: string): void {
     try {
-      const o = JSON.parse(raw) as Record<string, Object>;
+      // ArkWeb runJavaScript 会对字符串结果再做一次 JSON 序列化
+      // （Android evaluateJavascript 同款行为），拿到的是「双重编码」
+      // 字符串：此处循环解到非字符串为止，两种行为都兼容。
+      let obj: Object = JSON.parse(raw) as Object;
+      let depth: number = 0;
+      while (typeof obj === 'string' && depth < 2) {
+        obj = JSON.parse(obj as string) as Object;
+        depth++;
+      }
+      const o = obj as Record<string, Object>;
       const vids: string[] = [];
       const imgs: string[] = [];
       const v = o['videos'];
@@ -113,6 +155,7 @@ struct WebExtract {
       this.images = imgs;
       const t = o['title'];
       this.title = typeof t === 'string' ? t as string : '';
+      const scanned = typeof o['imgs'] === 'number' ? o['imgs'] as number : -1;
       this.progress = `识别到 ${vids.length} 个视频、${imgs.length} 张图片`;
       if (vids.length === 0 && imgs.length === 0) {
         // Instagram：DOM 提取不到时立即走 embed/captioned 解析通道
@@ -124,7 +167,8 @@ struct WebExtract {
         // SPA 页面媒体元素出现晚：空结果时自动重试几次
         if (this.attempts < 5) {
           this.attempts++;
-          this.progress = `正在等待页面渲染出媒体…（第 ${this.attempts}/5 次自动重试）`;
+          this.progress = `页面已加载（图片节点 ${scanned < 0 ? 0 : scanned} 个）` +
+            `但暂未匹配到媒体直链，第 ${this.attempts}/5 次自动重试…`;
           // 先滚动触发懒加载，再提取
           this.controller.runJavaScript(SCROLL_JS).catch((): void => {
           });
