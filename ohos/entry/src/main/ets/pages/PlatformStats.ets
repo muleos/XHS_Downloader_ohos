@@ -32,6 +32,9 @@ function badgeRes(p: Platform): Resource {
   if (p === Platform.TIKTOK) {
     return $r('app.media.ic_tiktok');
   }
+  if (p === Platform.BILIBILI) {
+    return $r('app.media.ic_bili');
+  }
   return $r('app.media.ic_xhs');
 }
 
@@ -58,8 +61,10 @@ struct PlatformStats {
     // 与收藏页完全同源同口径：先按源链接去重（保留最新一次保存），再按平台分组
     const items: SavedItem[] = AppContainer.get().saved.dedupeBySource(
       AppContainer.get().saved.getAll());
-    // 固定顺序：小红书 / 抖音 / Instagram / X；TikTok 有数据才显示
-    const order: Platform[] = [Platform.XHS, Platform.DOUYIN, Platform.INSTAGRAM, Platform.X, Platform.TIKTOK];
+    // 固定顺序：小红书 / 抖音 / Instagram / X 默认显示；
+    // TikTok / B站等其余平台仅在收藏页有该平台作品时显示（v1.24.0）
+    const order: Platform[] = [Platform.XHS, Platform.DOUYIN, Platform.INSTAGRAM, Platform.X,
+      Platform.TIKTOK, Platform.BILIBILI];
     const map: Map<Platform, StatRow> = new Map();
     for (const p of order) {
       const row = new StatRow();
@@ -89,7 +94,10 @@ struct PlatformStats {
     const next: StatRow[] = [];
     for (const p of order) {
       const row = map.get(p);
-      if (row !== undefined && (row.posts > 0 || p !== Platform.TIKTOK)) {
+      // 默认四平台常显；其余平台（TikTok / B站）收藏无作品则不显示
+      const isDefault = p === Platform.XHS || p === Platform.DOUYIN ||
+        p === Platform.INSTAGRAM || p === Platform.X;
+      if (row !== undefined && (isDefault || row.posts > 0)) {
         next.push(row);
       }
     }

@@ -102,7 +102,7 @@
     },
     {
       "name": "index_input_hint",
-      "value": "粘贴分享链接或分享文案（小红书 / 抖音 / Instagram / TikTok / X）"
+      "value": "粘贴分享链接或分享文案"
     },
     {
       "name": "index_parse",
@@ -118,7 +118,7 @@
     },
     {
       "name": "index_input_invalid",
-      "value": "未识别到有效链接，支持小红书 / 抖音 / Instagram / TikTok / X"
+      "value": "未识别到有效链接"
     },
     {
       "name": "index_resolving",

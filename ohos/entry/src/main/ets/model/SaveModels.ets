@@ -9,7 +9,8 @@ export enum Platform {
   INSTAGRAM = 2,
   TIKTOK = 3,
   X = 4,
-  UNKNOWN = 5
+  UNKNOWN = 5,
+  BILIBILI = 6
 }
 
 export enum WorkType {
@@ -134,6 +135,8 @@ export function platformName(p: Platform): string {
       return 'TikTok';
     case Platform.X:
       return 'X';
+    case Platform.BILIBILI:
+      return 'B站';
     default:
       return '链接';
   }

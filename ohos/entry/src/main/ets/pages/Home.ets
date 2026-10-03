@@ -537,6 +537,9 @@ function badgeRes(p: Platform): Resource {
   if (p === Platform.TIKTOK) {
     return $r('app.media.ic_tiktok');
   }
+  if (p === Platform.BILIBILI) {
+    return $r('app.media.ic_bili');
+  }
   return $r('app.media.ic_xhs');
 }
 

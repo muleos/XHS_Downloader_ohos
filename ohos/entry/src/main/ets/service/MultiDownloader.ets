@@ -266,6 +266,9 @@ export class MultiDownloader {
     if (url.indexOf('douyin') >= 0 || url.indexOf('byteimg') >= 0) {
       return 'https://www.douyin.com/';
     }
+    if (url.indexOf('hdslb.com') >= 0 || url.indexOf('bilibili.com') >= 0) {
+      return 'https://www.bilibili.com/';
+    }
     return '';
   }
 

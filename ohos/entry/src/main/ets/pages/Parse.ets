@@ -432,7 +432,7 @@ export struct ParsePage {
     .titleBar({
       avoidLayoutSafeArea: true,
       content: {
-        title: { mainTitle: '解析', subTitle: '支持小红书 / 抖音 / Instagram / TikTok / X' },
+        title: { mainTitle: '解析' },
         menu: this.menuOptions()
       },
       style: frostTitleBarStyle(Theme.pageBg, Theme.textPrimary, Theme.textSecondary)

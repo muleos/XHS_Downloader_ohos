@@ -87,7 +87,11 @@
               { "scheme": "https", "host": "t.co" },
               { "scheme": "https", "host": "tiktok.com" },
               { "scheme": "https", "host": "www.tiktok.com" },
-              { "scheme": "https", "host": "vm.tiktok.com" }
+              { "scheme": "https", "host": "vm.tiktok.com" },
+              { "scheme": "https", "host": "bilibili.com" },
+              { "scheme": "https", "host": "www.bilibili.com" },
+              { "scheme": "https", "host": "m.bilibili.com" },
+              { "scheme": "https", "host": "b23.tv" }
             ]
           }
         ]

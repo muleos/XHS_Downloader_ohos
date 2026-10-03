@@ -1347,6 +1347,205 @@ export class InstagramService {
 }
 
 /** 平台识别 + 分发。 */
+/**
+ * B站（v1.24.0）：公开 API 免登录通道。
+ *  - 视频：api.bilibili.com/x/web-interface/view（标题/封面/cid）
+ *          + x/player/playurl?platform=html5（durl 合成 mp4 直链）；
+ *  - 短链：b23.tv 经 getFollow 跟随重定向后从页面提取 BV 号；
+ *  - 图文：/opus/ /read/ 专栏页正则提取 hdslb 图片。
+ * 媒体下载需 Referer: https://www.bilibili.com/（MultiDownloader.refererFor 已配置）。
+ */
+export class BilibiliService {
+  static isBilibiliUrl(url: string): boolean {
+    return url.indexOf('bilibili.com') >= 0 || url.indexOf('b23.tv') >= 0;
+  }
+
+  /** 从 URL 或页面 HTML 提取 BV/av 号。 */
+  static bvid(url: string, html: string = ''): string {
+    const m = url.match(/BV[0-9A-Za-z]{10}/);
+    if (m !== null) {
+      return m[0];
+    }
+    if (html.length > 0) {
+      const m2 = html.match(/BV[0-9A-Za-z]{10}/);
+      if (m2 !== null) {
+        return m2[0];
+      }
+    }
+    const av = url.match(/\/video\/av(\d+)/);
+    return av !== null ? 'av' + av[1] : '';
+  }
+
+  static isArticleUrl(url: string): boolean {
+    return url.indexOf('/opus/') >= 0 || url.indexOf('read/cv') >= 0;
+  }
+
+  static failed(url: string, msg: string, webFallback: boolean = false): ParseResult {
+    const r = new ParseResult();
+    r.platform = Platform.BILIBILI;
+    r.sourceUrl = url;
+    r.status = ParseStatus.PARSE_FAILED;
+    r.message = msg;
+    r.webFallback = webFallback;
+    return r;
+  }
+
+  /** 图文/专栏：抓页面正则提取 hdslb 图片。 */
+  static async parseArticle(url: string): Promise<ParseResult> {
+    const target = url.indexOf('http') === 0 ? url : 'https://' + url;
+    const html = await Http.getText(target, IOS_UA, 'https://www.bilibili.com/');
+    if (html.length === 0) {
+      return BilibiliService.failed(url, 'B站页面获取失败（网络受限），可在「设置 → 网络」配置代理后重试', true);
+    }
+    const regex = /https:\/\/i\d\.hdslb\.com\/bfs\/[^"'\\\s)]+\.(?:jpg|jpeg|png|webp|gif)/gi;
+    const seen: string[] = [];
+    let m: RegExpExecArray | null = regex.exec(html);
+    while (m !== null) {
+      if (seen.indexOf(m[0]) < 0) {
+        seen.push(m[0]);
+      }
+      m = regex.exec(html);
+    }
+    if (seen.length === 0) {
+      return BilibiliService.failed(url, '未解析到 B站图文图片', true);
+    }
+    const result = new ParseResult();
+    result.platform = Platform.BILIBILI;
+    result.sourceUrl = target;
+    result.status = ParseStatus.OK;
+    result.workType = WorkType.IMAGES;
+    result.title = 'B站图文';
+    result.coverUrl = seen[0];
+    for (const img of seen) {
+      const mi = new MediaItem();
+      mi.url = img;
+      mi.type = WorkType.IMAGES;
+      result.mediaItems.push(mi);
+    }
+    return result;
+  }
+
+  static async parse(url: string): Promise<ParseResult> {
+    if (BilibiliService.isArticleUrl(url)) {
+      return BilibiliService.parseArticle(url);
+    }
+    const target = url.indexOf('http') === 0 ? url : 'https://' + url;
+    let bvid = BilibiliService.bvid(target);
+    let html = '';
+    // b23.tv 短链 / 带中文分享文案：跟随重定向拉页面提取 BV
+    if (bvid.length === 0) {
+      const page = await Http.getFollow(target, IOS_UA, 'https://www.bilibili.com/', 4);
+      html = page.text;
+      // 跟随重定向后拿到最终地址，优先从最终地址提取 BV
+      if (page.finalUrl.length > 0) {
+        bvid = BilibiliService.bvid(page.finalUrl);
+      }
+      if (bvid.length === 0) {
+        bvid = BilibiliService.bvid(target, html);
+      }
+      if (html.length === 0) {
+        return BilibiliService.failed(url, 'B站页面获取失败（网络受限），可在「设置 → 网络」配置代理后重试', true);
+      }
+    }
+    if (bvid.length === 0) {
+      return BilibiliService.failed(url, '未识别到 B站视频编号（BV/av）', true);
+    }
+    // 视频信息
+    const isAv = bvid.indexOf('av') === 0;
+    const viewApi = isAv
+      ? `https://api.bilibili.com/x/web-interface/view?aid=${bvid.substring(2)}`
+      : `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+    const viewText = await Http.getText(viewApi, IOS_UA, 'https://www.bilibili.com/');
+    if (viewText.length === 0) {
+      return BilibiliService.failed(url, 'B站视频信息获取失败', true);
+    }
+    let title = '';
+    let desc = '';
+    let pic = '';
+    let cid = 0;
+    let author = '';
+    try {
+      const view = JSON.parse(viewText) as Record<string, Object>;
+      const data = view['data'] as Record<string, Object>;
+      if (data === undefined || data === null) {
+        return BilibiliService.failed(url, 'B站视频不存在或已被删除');
+      }
+      title = typeof data['title'] === 'string' ? data['title'] as string : '';
+      desc = typeof data['desc'] === 'string' ? data['desc'] as string : '';
+      pic = typeof data['pic'] === 'string' ? data['pic'] as string : '';
+      cid = typeof data['cid'] === 'number' ? data['cid'] as number : 0;
+      const owner = data['owner'] as Record<string, Object>;
+      if (owner !== undefined && owner !== null && typeof owner['name'] === 'string') {
+        author = owner['name'] as string;
+      }
+      // 多 P：playurl 用第一个分 P 的 cid
+      if (cid === 0 && Array.isArray(data['pages']) && (data['pages'] as Array<Object>).length > 0) {
+        const p0 = (data['pages'] as Array<Record<string, Object>>)[0];
+        if (typeof p0['cid'] === 'number') {
+          cid = p0['cid'] as number;
+        }
+      }
+    } catch (e) {
+      return BilibiliService.failed(url, 'B站视频信息解析失败', true);
+    }
+    if (cid === 0) {
+      return BilibiliService.failed(url, '未取得 B站视频 cid', true);
+    }
+    // 播放直链（html5 通道合成 mp4，免登录）
+    const playApi = (isAv
+      ? `https://api.bilibili.com/x/player/playurl?aid=${bvid.substring(2)}&cid=${cid}`
+      : `https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}`) +
+      '&qn=64&type=MP4&platform=html5&high_quality=1';
+    let videoUrl = '';
+    try {
+      const playText = await Http.getText(playApi, IOS_UA, 'https://www.bilibili.com/');
+      const play = JSON.parse(playText) as Record<string, Object>;
+      const pdata = play['data'] as Record<string, Object>;
+      if (pdata !== undefined && pdata !== null && Array.isArray(pdata['durl']) &&
+        (pdata['durl'] as Array<Object>).length > 0) {
+        const d0 = (pdata['durl'] as Array<Record<string, Object>>)[0];
+        if (typeof d0['url'] === 'string') {
+          videoUrl = d0['url'] as string;
+        }
+      }
+    } catch (e) {
+      // 落入下方兜底
+    }
+    if (videoUrl.length === 0 && html.length > 0) {
+      // 兜底：页面 __playinfo__ 的 dash/baseUrl
+      const key = '"baseUrl":"https://';
+      const idx = html.indexOf(key);
+      if (idx >= 0) {
+        const start = html.indexOf('https://', idx);
+        const end = html.indexOf('"', start);
+        if (end > start) {
+          videoUrl = html.substring(start, end);
+        }
+      }
+    }
+    if (videoUrl.length === 0) {
+      const failed = BilibiliService.failed(url, '未取得 B站视频直链（部分视频需登录）', true);
+      failed.title = title;
+      return failed;
+    }
+    const result = new ParseResult();
+    result.platform = Platform.BILIBILI;
+    result.sourceUrl = target;
+    result.status = ParseStatus.OK;
+    result.noteId = bvid;
+    result.title = title;
+    result.shareText = desc;
+    result.author = author;
+    result.workType = WorkType.VIDEO;
+    result.coverUrl = pic;
+    const mi = new MediaItem();
+    mi.url = videoUrl;
+    mi.type = WorkType.VIDEO;
+    result.mediaItems.push(mi);
+    return result;
+  }
+}
+
 export class MediaParser {
   /**
    * 通用链接提取：任何平台（小红书 / 抖音 / Instagram / TikTok / X）均可识别。
@@ -1410,6 +1609,9 @@ export class MediaParser {
     if (XService.isXUrl(url)) {
       return Platform.X;
     }
+    if (BilibiliService.isBilibiliUrl(url)) {
+      return Platform.BILIBILI;
+    }
     return Platform.UNKNOWN;
   }
 
@@ -1424,6 +1626,8 @@ export class MediaParser {
         return TikTokService.parse(url);
       case Platform.X:
         return XService.parse(url);
+      case Platform.BILIBILI:
+        return BilibiliService.parse(url);
       default: {
         const failed = new ParseResult();
         failed.sourceUrl = url;
