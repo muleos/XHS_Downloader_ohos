@@ -77,7 +77,7 @@ struct Index {
     const list: BottomTabBarStyle[] = [];
     for (let i = 0; i < TAB_COUNT; i++) {
       const symbol: TabBarSymbol = {
-        normal: this.tintModifier(TAB_ICON[i], '#000000'),
+        normal: this.tintModifier(TAB_ICON[i], $r('app.color.tab_normal')),
         selected: this.tintModifier(TAB_ICON[i], Theme.accent)
       };
       list.push(BottomTabBarStyle.of(symbol, TAB_LABEL[i])

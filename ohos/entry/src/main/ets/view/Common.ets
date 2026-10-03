@@ -1,17 +1,72 @@
 /** Shared UI atoms. */
 import { promptAction, router } from '@kit.ArkUI';
 
+/**
+ * 主题色板（v1.25.0 深浅色适配）：
+ * 全部走资源色（resources/base + resources/dark 双份 color.json），
+ * 系统深浅色切换时框架自动重解析 $r 绑定，无需手动刷新 UI。
+ */
 export class Theme {
-  static readonly red: string = '#FF2442';
-  /** 主题高亮色（v1.24.1 起为皇家蓝 #4169E1）：底栏选中态 / 主操作按钮。 */
-  static readonly accent: string = '#4169E1';
-  static readonly accentLight: string = '#1A4169E1';
-  static readonly textPrimary: string = '#E6000000';
-  static readonly textSecondary: string = '#99000000';
-  static readonly divider: string = '#1A000000';
-  static readonly pageBg: string = '#F7F7F7';
-  static readonly cardBg: string = '#FFFFFF';
-  static readonly selectedBg: string = '#334169E1';
+  /** 警示红（删除/清除/暂停等），暗色下提亮。 */
+  static get red(): Resource {
+    return $r('app.color.brand_red');
+  }
+
+  /** 主题高亮色（皇家蓝 #4169E1，暗色 #7A93EA）：底栏选中态 / 主操作按钮。 */
+  static get accent(): Resource {
+    return $r('app.color.accent');
+  }
+
+  static get accentLight(): Resource {
+    return $r('app.color.accent_light');
+  }
+
+  static get textPrimary(): Resource {
+    return $r('app.color.text_primary');
+  }
+
+  static get textSecondary(): Resource {
+    return $r('app.color.text_secondary');
+  }
+
+  static get divider(): Resource {
+    return $r('app.color.divider');
+  }
+
+  static get pageBg(): Resource {
+    return $r('app.color.page_background');
+  }
+
+  static get cardBg(): Resource {
+    return $r('app.color.card_background');
+  }
+
+  static get selectedBg(): Resource {
+    return $r('app.color.selected_bg');
+  }
+
+  /** 毛玻璃条背景/描边（批量操作条等，暗色换深板岩）。 */
+  static get glassBg(): Resource {
+    return $r('app.color.glass_bg');
+  }
+
+  static get glassBorder(): Resource {
+    return $r('app.color.glass_border');
+  }
+
+  static get completedGreen(): Resource {
+    return $r('app.color.completed_green');
+  }
+
+  /** 底栏未选中图标色。 */
+  static get tabNormal(): Resource {
+    return $r('app.color.tab_normal');
+  }
+
+  /** 当前是否深色模式（逻辑判断用；XhsAbilityStage/EntryAbility 维护）。 */
+  static isDark(): boolean {
+    return AppStorage.get<boolean>('isDarkMode') === true;
+  }
 }
 
 export function toast(message: ResourceStr): void {
@@ -87,7 +142,7 @@ export struct SelectorRow {
   @Prop desc: string = '';
   @Prop value: ResourceStr = '';
   /** 值区文字颜色（二级页入口行用 textSecondary，选项行用 accent） */
-  valueColor: string = Theme.accent;
+  valueColor: ResourceColor = Theme.accent;
   /** true = 行尾画箭头（二级页入口）；false = 选项行不画 */
   showArrow: boolean = true;
   onTap: () => void = (): void => {};

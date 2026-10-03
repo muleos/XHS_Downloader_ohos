@@ -224,9 +224,9 @@ struct History {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 10 })
-        .backgroundColor('#F2FFFFFF')
+        .backgroundColor(Theme.glassBg)
         .backgroundBlurStyle(BlurStyle.Regular)
-        .border({ width: 0.5, color: '#33FFFFFF' })
+        .border({ width: 0.5, color: Theme.glassBorder })
         .alignItems(VerticalAlign.Center)
       }
     }

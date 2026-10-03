@@ -18,7 +18,7 @@ import { hdsMaterial, HdsNavigation, HdsNavigationTitleMode, ScrollEffectType,
 import { Theme } from './Common';
 
 /** VHome frostTitleBarStyle 同款：官方材质 + 文字/返回键染色 */
-export function frostTitleBarStyle(bgColor: string, mainColor: string, subColor: string): TitleBarStyleOptions {
+export function frostTitleBarStyle(bgColor: ResourceColor, mainColor: ResourceColor, subColor: ResourceColor): TitleBarStyleOptions {
   const contentStyle: HdsTitleBarContentStyle = {
     titleStyle: { mainTitleColor: mainColor, subTitleColor: subColor },
     backIconStyle: { iconColor: mainColor },
@@ -51,7 +51,7 @@ export struct FrostScaffold {
   @Prop title: string = '';
   /** 页面主滚动容器控制器（官方滚动源绑定） */
   scroller: Scroller = new Scroller();
-  bgColor: string = Theme.pageBg;
+  bgColor: ResourceColor = Theme.pageBg;
 
   @BuilderParam
   content: () => void = this.emptyContent;

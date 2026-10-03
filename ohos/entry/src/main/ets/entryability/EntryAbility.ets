@@ -1,4 +1,5 @@
-import { UIAbility, AbilityConstant, Want, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
+import { UIAbility, AbilityConstant, Configuration, Want, abilityAccessCtrl, Permissions,
+  ConfigurationConstant } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { window } from '@kit.ArkUI';
@@ -18,12 +19,36 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'onCreate');
     AppContainer.get().init(this.context);
+    // v1.25.0：初始化深浅色标记（资源色切换由框架自动处理，
+    // isDarkMode 仅供查看器按钮等逻辑判断用）
+    try {
+      const mode = this.context.config.colorMode;
+      AppStorage.setOrCreate<boolean>('isDarkMode', mode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    } catch (e) {
+    }
     // v1.19.0：启动即请求剪贴板读取权限（user_grant）。
     // 缺权限时系统会弹一次性授权框，拒绝后 getData 返回空/报错 → 一键解析
     // 一直提示「剪贴板为空」。显式申请并允许后读剪贴板才稳定。
     this.requestPasteboardPermission();
     // v1.23.3：系统分享 / 浏览器链接接入（小红书/抖音/IG/X/TikTok 等）
     this.handleWant(want);
+  }
+
+  /** 系统配置变化（深浅色切换）：同步 isDarkMode + 状态栏内容色反色。 */
+  onConfigurationUpdate(newConfig: Configuration): void {
+    const dark = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    AppStorage.setOrCreate<boolean>('isDarkMode', dark);
+    hilog.info(DOMAIN, TAG, 'onConfigurationUpdate colorMode dark=%{public}s', String(dark));
+    try {
+      const mainWin = window.getLastWindow(this.context);
+      mainWin.then((win) => {
+        win.setWindowSystemBarProperties({
+          statusBarContentColor: dark ? '#FFFFFF' : '#000000'
+        });
+      }).catch(() => {
+      });
+    } catch (e) {
+    }
   }
 
   private requestPasteboardPermission(): void {
@@ -147,7 +172,7 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate('leftAvoid', leftVp);
       AppStorage.setOrCreate('rightAvoid', rightVp);
       mainWin.setWindowSystemBarProperties({
-        statusBarContentColor: '#000000'
+        statusBarContentColor: AppStorage.get<boolean>('isDarkMode') === true ? '#FFFFFF' : '#000000'
       });
       // 「保持屏幕常亮」设置启动时生效（设置页切换时即时应用）
       try {

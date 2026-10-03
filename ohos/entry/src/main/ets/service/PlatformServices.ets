@@ -1084,6 +1084,174 @@ export class InstagramService {
     return m !== null ? m[1] : '';
   }
 
+  /**
+   * 通道〇（2026 主通道，scrapfly 2026-09 实测）：帖子页 HTML 解析。
+   * 单帖 graphql 已于 2026-06-29 被 IG 下线；公开帖数据现内嵌在帖子页
+   * <script type="application/json" data-sjs> 的 xig_polaris_media 里，
+   * 未登录请求时真实 payload 嵌在 if_not_gated_logged_out 之下。
+   * 字段为 REST 风格：image_versions2.candidates / video_versions / carousel_media。
+   */
+  static async pageHtmlParse(code: string, postType: string): Promise<ParseResult> {
+    const failed = new ParseResult();
+    failed.platform = Platform.INSTAGRAM;
+    failed.status = ParseStatus.PARSE_FAILED;
+    failed.message = '页面通道无数据';
+    const pageUrl = `https://www.instagram.com/${postType}/${code}/`;
+    const html = await Http.getText(pageUrl, InstagramService.DESKTOP_UA, '');
+    if (html.length === 0) {
+      failed.message = 'Instagram 帖子页获取失败';
+      return failed;
+    }
+    const key = '"xig_polaris_media"';
+    let idx = html.indexOf(key);
+    if (idx < 0) {
+      // script 内 JSON 可能整体转义（\" 形式），反转义后再找
+      const unescaped = html.split('\\"').join('"');
+      idx = unescaped.indexOf(key);
+      if (idx >= 0) {
+        return InstagramService.mapPolarisHtml(unescaped, idx, pageUrl);
+      }
+      failed.message = '页面未包含帖子数据（可能被登录墙拦截）';
+      failed.webFallback = true;
+      return failed;
+    }
+    return InstagramService.mapPolarisHtml(html, idx, pageUrl);
+  }
+
+  /** 从 html 的 key 位置提取 xig_polaris_media 值对象并映射。 */
+  static mapPolarisHtml(html: string, keyIdx: number, pageUrl: string): ParseResult {
+    const brace = html.indexOf('{', keyIdx + '"xig_polaris_media"'.length);
+    if (brace < 0) {
+      const failed = new ParseResult();
+      failed.platform = Platform.INSTAGRAM;
+      failed.status = ParseStatus.PARSE_FAILED;
+      failed.message = '帖子数据提取失败';
+      return failed;
+    }
+    const jsonText = Http.extractBalancedJson(html, brace);
+    if (jsonText.length === 0) {
+      const failed = new ParseResult();
+      failed.platform = Platform.INSTAGRAM;
+      failed.status = ParseStatus.PARSE_FAILED;
+      failed.message = '帖子数据提取失败';
+      return failed;
+    }
+    try {
+      const media = JSON.parse(jsonText) as Record<string, Object>;
+      // 未登录请求：真实 payload 嵌在 if_not_gated_logged_out 之下
+      const gated = media['if_not_gated_logged_out'] as Record<string, Object>;
+      const target = (gated !== null && gated !== undefined) ? gated : media;
+      return InstagramService.mapPolaris(target, pageUrl);
+    } catch (e) {
+      const failed = new ParseResult();
+      failed.platform = Platform.INSTAGRAM;
+      failed.status = ParseStatus.PARSE_FAILED;
+      failed.message = '帖子数据解析失败';
+      failed.webFallback = true;
+      return failed;
+    }
+  }
+
+  /** REST 风格单节点 → 媒体项：photo 用 image_versions2 最大图，video 用 video_versions 最大清晰度。 */
+  static polarisNodeToItem(node: Record<string, Object>): MediaItem | null {
+    const mi = new MediaItem();
+    mi.width = Http.num(node['original_width']);
+    mi.height = Http.num(node['original_height']);
+    const videos = node['video_versions'];
+    if (Array.isArray(videos) && (videos as Array<Object>).length > 0) {
+      // 选分辨率最高的视频版本
+      let best: Record<string, Object> | null = null;
+      let bestW = -1;
+      for (const v of videos as Array<Object>) {
+        const vo = v as Record<string, Object>;
+        const w = Http.num(vo['width']);
+        if (w > bestW) {
+          bestW = w;
+          best = vo;
+        }
+      }
+      if (best !== null && typeof best['url'] === 'string') {
+        mi.type = WorkType.VIDEO;
+        mi.url = best['url'] as string;
+        const imgs = node['image_versions2'] as Record<string, Object>;
+        if (imgs !== null && imgs !== undefined) {
+          const cands = imgs['candidates'] as Array<Object>;
+          if (Array.isArray(cands) && cands.length > 0) {
+            const c0 = cands[0] as Record<string, Object>;
+            if (typeof c0['url'] === 'string') {
+              mi.posterUrl = c0['url'] as string;
+            }
+          }
+        }
+        return mi;
+      }
+    }
+    const imgs2 = node['image_versions2'] as Record<string, Object>;
+    if (imgs2 !== null && imgs2 !== undefined) {
+      const cands = imgs2['candidates'] as Array<Object>;
+      if (Array.isArray(cands) && cands.length > 0) {
+        let best: Record<string, Object> | null = null;
+        let bestW = -1;
+        for (const c of cands as Array<Object>) {
+          const co = c as Record<string, Object>;
+          const w = Http.num(co['width']);
+          if (w > bestW) {
+            bestW = w;
+            best = co;
+          }
+        }
+        if (best !== null && typeof best['url'] === 'string') {
+          mi.type = WorkType.IMAGES;
+          mi.url = best['url'] as string;
+          return mi;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** xig_polaris_media（或 if_not_gated_logged_out 解包后）→ ParseResult。 */
+  static mapPolaris(media: Record<string, Object>, sourceUrl: string): ParseResult {
+    const result = new ParseResult();
+    result.platform = Platform.INSTAGRAM;
+    result.sourceUrl = sourceUrl;
+    result.status = ParseStatus.OK;
+    const cap = media['caption'] as Record<string, Object>;
+    if (cap !== null && cap !== undefined && typeof cap['text'] === 'string') {
+      result.title = cap['text'] as string;
+    }
+    const user = media['user'] as Record<string, Object>;
+    if (user !== null && user !== undefined && typeof user['username'] === 'string') {
+      result.author = user['username'] as string;
+    }
+    // 轮播（media_type 8 / product_type carousel_container）
+    const carousel = media['carousel_media'];
+    if (Array.isArray(carousel)) {
+      for (const c of carousel as Array<Object>) {
+        const co = c as Record<string, Object>;
+        const mi = InstagramService.polarisNodeToItem(co);
+        if (mi !== null) {
+          result.mediaItems.push(mi);
+        }
+      }
+    }
+    if (result.mediaItems.length === 0) {
+      const single = InstagramService.polarisNodeToItem(media);
+      if (single !== null) {
+        result.mediaItems.push(single);
+      }
+    }
+    if (result.title.length === 0) {
+      result.title = 'Instagram';
+    }
+    if (result.mediaItems.length === 0) {
+      result.status = ParseStatus.PARSE_FAILED;
+      result.message = '帖子数据中没有媒体直链';
+      result.webFallback = true;
+    }
+    return result;
+  }
+
   static async parse(url: string): Promise<ParseResult> {
     const failed = new ParseResult();
     failed.platform = Platform.INSTAGRAM;
@@ -1110,9 +1278,13 @@ export class InstagramService {
       return failed;
     }
     failed.message = '没有解析到 Instagram 作品媒体地址';
-    // 通道一（主）：web graphql 免登录接口，2025 年起公开作品的标准获取方式。
-    // 返回 data.xdt_shortcode_media，字段与旧 shortcode_media 完全一致
-    // （display_url / video_url / edge_sidecar_to_children / edge_media_to_caption / owner / dimensions）。
+    // 通道〇（主，2026-06 起唯一稳定免登录通道）：帖子页 HTML xig_polaris_media
+    const page = await InstagramService.pageHtmlParse(code, InstagramService.postType(target));
+    if (page.status === ParseStatus.OK && page.mediaItems.length > 0) {
+      page.sourceUrl = target;
+      return page;
+    }
+    // 通道一（备）：web graphql（2026-06-29 曾下线，IG 可能轮换恢复，保留兜底）
     const gql = await InstagramService.graphqlParse(code);
     if (gql.status === ParseStatus.OK && gql.mediaItems.length > 0) {
       gql.sourceUrl = target;

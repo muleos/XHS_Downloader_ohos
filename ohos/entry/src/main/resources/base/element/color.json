@@ -1,12 +1,18 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#FFFFFF" },
+    { "name": "start_window_background", "value": "#F7F7F7" },
     { "name": "brand_red", "value": "#FF2442" },
+    { "name": "accent", "value": "#4169E1" },
+    { "name": "accent_light", "value": "#1A4169E1" },
     { "name": "text_primary", "value": "#E6000000" },
     { "name": "text_secondary", "value": "#99000000" },
     { "name": "divider", "value": "#1A000000" },
     { "name": "card_background", "value": "#FFFFFFFF" },
     { "name": "page_background", "value": "#F7F7F7" },
-    { "name": "selected_bg", "value": "#1AFF2442" }
+    { "name": "selected_bg", "value": "#334169E1" },
+    { "name": "glass_bg", "value": "#F2FFFFFF" },
+    { "name": "glass_border", "value": "#33FFFFFF" },
+    { "name": "completed_green", "value": "#4CAF50" },
+    { "name": "tab_normal", "value": "#000000" }
   ]
 }

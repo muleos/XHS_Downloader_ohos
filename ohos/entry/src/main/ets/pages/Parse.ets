@@ -420,9 +420,9 @@ export struct ParsePage {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 90 })
-        .backgroundColor('#F2FFFFFF')
+        .backgroundColor(Theme.glassBg)
         .backgroundBlurStyle(BlurStyle.Regular)
-        .border({ width: 0.5, color: '#33FFFFFF' })
+        .border({ width: 0.5, color: Theme.glassBorder })
         .alignItems(VerticalAlign.Center)
       }
       }
@@ -535,7 +535,7 @@ export struct TaskRow {
             .layoutWeight(1)
           Text(this.statusLabel())
             .fontSize(12)
-            .fontColor(this.task.status === TaskStatus.COMPLETED ? '#4CAF50' : Theme.textSecondary)
+            .fontColor(this.task.status === TaskStatus.COMPLETED ? Theme.completedGreen : Theme.textSecondary)
         }
         .width('100%')
 
