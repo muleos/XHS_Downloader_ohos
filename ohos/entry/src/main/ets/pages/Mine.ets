@@ -28,12 +28,18 @@ export struct MinePage {
   /** 主滚动容器控制器（HdsNavigation bindToScrollable 官方滚动源绑定） */
   private scroller: Scroller = new Scroller();
 
+  /** 与收藏页同口径：按源链接去重后的作品数（SavedStore.dedupeBySource 共用） */
+  private refreshSavedCount(): void {
+    this.savedCount = AppContainer.get().saved.dedupeBySource(
+      AppContainer.get().saved.getAll()).length;
+  }
+
   aboutToAppear(): void {
-    this.savedCount = AppContainer.get().saved.getAll().length;
+    this.refreshSavedCount();
   }
 
   onSavedChanged(): void {
-    this.savedCount = AppContainer.get().saved.getAll().length;
+    this.refreshSavedCount();
   }
 
   private currentVersion(): string {
