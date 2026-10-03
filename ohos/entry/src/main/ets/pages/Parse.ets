@@ -346,7 +346,10 @@ export struct ParsePage {
     // 与收藏页同款官方顶栏骨架：HdsNavigation MINI + frost 四件套，
     // 三个一级页面顶栏高度与水平对齐由官方组件统一。
     HdsNavigation() {
-      Scroll(this.scroller) {
+      // Scroll + 批量操作条必须包在显式 Column 里：HdsNavigation 内容闭包
+      // 的多子节点布局不受控（layoutWeight/底部避让失效），History 页同款结构。
+      Column() {
+        Scroll(this.scroller) {
         Column({ space: 12 }) {
           TextArea({ text: this.input, placeholder: $r('app.string.index_input_hint') })
             .fontSize(15)
@@ -434,7 +437,7 @@ export struct ParsePage {
         this.readClipboardAndPrefill(false);
       })
 
-      // 任务批量操作条（毛玻璃，History 同款）
+      // 任务批量操作条（毛玻璃，History 同款；Column 内正常参与底部布局）
       if (this.taskBatchMode && this.taskSelected.length > 0) {
         Row({ space: 12 }) {
           Text(`已选 ${this.taskSelected.length} 个任务`)
@@ -456,6 +459,9 @@ export struct ParsePage {
         .border({ width: 0.5, color: '#33FFFFFF' })
         .alignItems(VerticalAlign.Center)
       }
+      }
+      .width('100%')
+      .height('100%')
     }
     .titleBar({
       avoidLayoutSafeArea: true,
