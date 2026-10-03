@@ -26,6 +26,10 @@ export struct ParsePage {
   @State resolving: boolean = false;
   @State progressText: string = '';
   @State queueState: QueueListenerState = new QueueListenerState();
+  /** 任务列表批量管理模式：true 时点击任务卡切换选中，底部出现批量操作条 */
+  @State taskBatchMode: boolean = false;
+  /** 批量管理已选中的任务 id 集合 */
+  @State taskSelected: number[] = [];
   /** 主滚动容器控制器（HdsNavigation bindToScrollable 官方滚动源绑定） */
   private scroller: Scroller = new Scroller();
   /** 首页解析圆钮的跨页请求：非空 = 待解析的分享文本 */
@@ -281,6 +285,63 @@ export struct ParsePage {
     this.progressText = '';
   }
 
+  private isTaskSelected(id: number): boolean {
+    return this.taskSelected.indexOf(id) >= 0;
+  }
+
+  private toggleTaskSelect(id: number): void {
+    if (this.isTaskSelected(id)) {
+      this.taskSelected = this.taskSelected.filter((v: number): boolean => v !== id);
+    } else {
+      this.taskSelected.push(id);
+    }
+  }
+
+  private toggleTaskBatch(): void {
+    this.taskBatchMode = !this.taskBatchMode;
+    this.taskSelected = [];
+  }
+
+  private selectAllTasks(): void {
+    if (this.taskSelected.length === this.queueState.tasks.length) {
+      this.taskSelected = [];
+      return;
+    }
+    const ids: number[] = [];
+    for (const t of this.queueState.tasks) {
+      ids.push(t.id);
+    }
+    this.taskSelected = ids;
+  }
+
+  /** 批量删除所选任务：进行中的任务会先被取消再移除（二次确认） */
+  private deleteSelectedTasks(): void {
+    if (this.taskSelected.length === 0) {
+      toast('请先选择要删除的任务');
+      return;
+    }
+    const doomed = this.taskSelected;
+    const hasActive = this.queueState.tasks.some((t: DownloadTask): boolean =>
+      doomed.indexOf(t.id) >= 0 && (t.status === TaskStatus.DOWNLOADING ||
+        t.status === TaskStatus.RESOLVING || t.status === TaskStatus.QUEUED));
+    promptAction.showDialog({
+      title: `删除 ${doomed.length} 个任务？`,
+      message: hasActive ? '进行中的任务将被取消并移除。' : '删除后不可恢复。',
+      buttons: [
+        { text: '删除', color: Theme.red },
+        { text: '取消', color: Theme.textSecondary }
+      ]
+    }).then((data: promptAction.ShowDialogSuccessResponse): void => {
+      if (data.index === 0) {
+        AppContainer.get().queue.removeBatch(doomed);
+        this.taskSelected = [];
+        toast(`已删除 ${doomed.length} 个任务`);
+      }
+    }).catch((): void => {
+      // 蒙层取消
+    });
+  }
+
   build() {
     // 与收藏页同款官方顶栏骨架：HdsNavigation MINI + frost 四件套，
     // 三个一级页面顶栏高度与水平对齐由官方组件统一。
@@ -325,14 +386,41 @@ export struct ParsePage {
           .width('100%')
 
           if (this.queueState.tasks.length > 0) {
-            Text($r('app.string.index_tasks'))
-              .fontSize(14)
-              .fontColor(Theme.textSecondary)
-              .width('100%')
+            Row({ space: 10 }) {
+              Text($r('app.string.index_tasks'))
+                .fontSize(14)
+                .fontColor(Theme.textSecondary)
+                .layoutWeight(1)
+              if (this.taskBatchMode) {
+                Text('全选')
+                  .fontSize(13)
+                  .fontColor(Theme.textPrimary)
+                  .onClick(() => {
+                    this.selectAllTasks();
+                  })
+              }
+              Text(this.taskBatchMode ? '退出管理' : '管理')
+                .fontSize(13)
+                .fontColor(this.taskBatchMode ? Theme.accent : Theme.textPrimary)
+                .onClick(() => {
+                  this.toggleTaskBatch();
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
           }
           ForEach(this.queueState.tasks, (task: DownloadTask) => {
-            TaskRow({ task: task, speedBps: this.queueState.speedBps })
-          }, (task: DownloadTask) => task.id.toString() + '_' + task.status)
+            TaskRow({
+              task: task,
+              speedBps: this.queueState.speedBps,
+              batchMode: this.taskBatchMode,
+              selected: this.isTaskSelected(task.id),
+              onToggle: (): void => {
+                this.toggleTaskSelect(task.id);
+              }
+            })
+          }, (task: DownloadTask) => task.id.toString() + '_' + task.status +
+            '_' + this.taskBatchMode + '_' + this.isTaskSelected(task.id))
         }
         .width('100%')
         .padding({ left: 16, right: 16, bottom: 96, top: this.topAvoid + 88 })
@@ -342,10 +430,32 @@ export struct ParsePage {
       .align(Alignment.Top)
       .layoutWeight(1)
       .width('100%')
-      .height('100%')
       .onAppear(() => {
         this.readClipboardAndPrefill(false);
       })
+
+      // 任务批量操作条（毛玻璃，History 同款）
+      if (this.taskBatchMode && this.taskSelected.length > 0) {
+        Row({ space: 12 }) {
+          Text(`已选 ${this.taskSelected.length} 个任务`)
+            .fontSize(13)
+            .fontColor(Theme.textPrimary)
+            .layoutWeight(1)
+          Button('删除所选', { buttonStyle: ButtonStyleMode.EMPHASIZED })
+            .fontSize(13)
+            .fontColor(Color.White)
+            .backgroundColor(Theme.accent)
+            .onClick(() => {
+              this.deleteSelectedTasks();
+            })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 10 })
+        .backgroundColor('#F2FFFFFF')
+        .backgroundBlurStyle(BlurStyle.Regular)
+        .border({ width: 0.5, color: '#33FFFFFF' })
+        .alignItems(VerticalAlign.Center)
+      }
     }
     .titleBar({
       avoidLayoutSafeArea: true,
@@ -370,6 +480,11 @@ export struct ParsePage {
 export struct TaskRow {
   task: DownloadTask = new DownloadTask();
   speedBps: number = 0;
+  /** 批量管理模式：显示勾选圈，隐藏单任务操作 */
+  batchMode: boolean = false;
+  /** 批量模式下本任务是否选中 */
+  selected: boolean = false;
+  onToggle: () => void = (): void => {};
 
   /** 媒体卡片信息（设置 → 下载选项）：1 文件体积 / 2 分辨率（有数据时） */
   private mediaInfo(): string {
@@ -418,71 +533,100 @@ export struct TaskRow {
   }
 
   build() {
-    Column({ space: 6 }) {
-      Row() {
-        Text(this.task.noteTitle.length > 0 ? this.task.noteTitle : this.task.noteUrl)
-          .fontSize(13)
-          .fontColor(Theme.textPrimary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(this.statusLabel())
-          .fontSize(12)
-          .fontColor(this.task.status === TaskStatus.COMPLETED ? '#4CAF50' : Theme.textSecondary)
+    Row({ space: 10 }) {
+      // 批量态勾选圈（History 同款）
+      if (this.batchMode) {
+        Stack() {
+          if (this.selected) {
+            SymbolGlyph($r('sys.symbol.checkmark'))
+              .fontSize(14)
+              .fontColor([Theme.accent])
+          }
+        }
+        .width(22)
+        .height(22)
+        .borderRadius(11)
+        .backgroundColor(this.selected ? Theme.accent : Color.Transparent)
+        .border({ width: 1.5, color: this.selected ? Theme.accent : Theme.textSecondary })
+        .onClick(() => {
+          this.onToggle();
+        })
       }
-      .width('100%')
 
-      Progress({ value: this.task.progress, total: 100 })
+      Column({ space: 6 }) {
+        Row() {
+          Text(this.task.noteTitle.length > 0 ? this.task.noteTitle : this.task.noteUrl)
+            .fontSize(13)
+            .fontColor(Theme.textPrimary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          Text(this.statusLabel())
+            .fontSize(12)
+            .fontColor(this.task.status === TaskStatus.COMPLETED ? '#4CAF50' : Theme.textSecondary)
+        }
         .width('100%')
-        .height(4)
-        .color(Theme.red)
 
-      Row({ space: 8 }) {
-        Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}` +
-          (this.mediaInfo().length > 0 ? '  ' + this.mediaInfo() : ''))
-          .fontSize(11)
-          .fontColor(Theme.textSecondary)
-          .layoutWeight(1)
-        if (this.task.status === TaskStatus.DOWNLOADING || this.task.status === TaskStatus.RESOLVING) {
-          Text($r('app.string.task_pause'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.pause(this.task.id);
-            })
-        }
-        if (this.task.status === TaskStatus.PAUSED) {
-          Text($r('app.string.task_resume'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.resume(this.task.id);
-            })
-        }
-        if (this.task.status !== TaskStatus.COMPLETED && this.task.status !== TaskStatus.CANCELLED) {
-          Text($r('app.string.task_cancel'))
-            .fontSize(12)
+        Progress({ value: this.task.progress, total: 100 })
+          .width('100%')
+          .height(4)
+          .color(Theme.red)
+
+        Row({ space: 8 }) {
+          Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}` +
+            (this.mediaInfo().length > 0 ? '  ' + this.mediaInfo() : ''))
+            .fontSize(11)
             .fontColor(Theme.textSecondary)
-            .onClick(() => {
-              AppContainer.get().queue.cancel(this.task.id);
-            })
+            .layoutWeight(1)
+          if (!this.batchMode) {
+            if (this.task.status === TaskStatus.DOWNLOADING || this.task.status === TaskStatus.RESOLVING) {
+              Text($r('app.string.task_pause'))
+                .fontSize(12)
+                .fontColor(Theme.red)
+                .onClick(() => {
+                  AppContainer.get().queue.pause(this.task.id);
+                })
+            }
+            if (this.task.status === TaskStatus.PAUSED) {
+              Text($r('app.string.task_resume'))
+                .fontSize(12)
+                .fontColor(Theme.red)
+                .onClick(() => {
+                  AppContainer.get().queue.resume(this.task.id);
+                })
+            }
+            if (this.task.status !== TaskStatus.COMPLETED && this.task.status !== TaskStatus.CANCELLED) {
+              Text($r('app.string.task_cancel'))
+                .fontSize(12)
+                .fontColor(Theme.textSecondary)
+                .onClick(() => {
+                  AppContainer.get().queue.cancel(this.task.id);
+                })
+            }
+            if (this.task.status === TaskStatus.FAILED || this.task.status === TaskStatus.PARTIAL) {
+              Text($r('app.string.task_retry'))
+                .fontSize(12)
+                .fontColor(Theme.red)
+                .onClick(() => {
+                  AppContainer.get().queue.retry(this.task.id);
+                })
+            }
+          }
         }
-        if (this.task.status === TaskStatus.FAILED || this.task.status === TaskStatus.PARTIAL) {
-          Text($r('app.string.task_retry'))
-            .fontSize(12)
-            .fontColor(Theme.red)
-            .onClick(() => {
-              AppContainer.get().queue.retry(this.task.id);
-            })
-        }
+        .width('100%')
       }
-      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
     }
-    .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding(12)
     .borderRadius(12)
     .backgroundColor(Theme.cardBg)
+    .onClick(() => {
+      if (this.batchMode) {
+        this.onToggle();
+      }
+    })
   }
 }
 

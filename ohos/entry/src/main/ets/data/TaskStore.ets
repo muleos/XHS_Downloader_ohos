@@ -191,6 +191,16 @@ export class TaskStore {
     this.persist();
   }
 
+  /** 批量删除任务（一次 persist）：调用方需先把在跑的任务 cancel。 */
+  removeBatch(ids: number[]): void {
+    if (ids.length === 0) {
+      return;
+    }
+    const doomed: Set<number> = new Set<number>(ids);
+    this.tasks = this.tasks.filter((t: DownloadTask): boolean => !doomed.has(t.id));
+    this.persist();
+  }
+
   clearFinished(): void {
     this.tasks = this.tasks.filter((t: DownloadTask): boolean =>
       t.status !== TaskStatus.COMPLETED && t.status !== TaskStatus.CANCELLED &&

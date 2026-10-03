@@ -162,6 +162,35 @@ export class DownloadQueue {
     this.notify();
   }
 
+  /**
+   * 批量删除任务（解析页批量管理）：
+   * 在跑/排队中的任务先置 CANCELLED（资源级取消标记让传输循环尽快退出），
+   * 再从存储一次性移除，最后通知 UI。
+   */
+  removeBatch(taskIds: number[]): void {
+    if (taskIds.length === 0) {
+      return;
+    }
+    for (const id of taskIds) {
+      const task = this.store.byId(id);
+      if (task === null) {
+        continue;
+      }
+      if (task.status === TaskStatus.DOWNLOADING || task.status === TaskStatus.RESOLVING ||
+        task.status === TaskStatus.QUEUED) {
+        for (const res of task.resources) {
+          if (res.state === ResourceState.DOWNLOADING) {
+            this.cancelledResources.add(task.id + '/' + res.mediaId);
+          }
+        }
+        task.status = TaskStatus.CANCELLED;
+        task.active = false;
+      }
+    }
+    this.store.removeBatch(taskIds);
+    this.notify();
+  }
+
   pause(taskId: number): void {
     const task = this.store.byId(taskId);
     if (task === null) {
