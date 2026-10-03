@@ -149,6 +149,50 @@ class Http {
     return out;
   }
 
+  /** POST 表单（Instagram graphql 等接口），返回 2xx/3xx 正文，否则空串。 */
+  static async postForm(url: string, body: string, headers: Record<string, string>, ua: string,
+    referer: string): Promise<string> {
+    let req: http.HttpRequest | null = null;
+    try {
+      req = http.createHttp();
+      const header: Record<string, string> = {
+        'User-Agent': ua.length > 0 ? ua : IOS_UA,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9'
+      };
+      const ks = Object.keys(headers);
+      for (const k of ks) {
+        header[k] = headers[k];
+      }
+      if (referer.length > 0) {
+        header['Referer'] = referer;
+      }
+      const opt: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: body,
+        expectDataType: http.HttpDataType.STRING,
+        usingCache: false,
+        usingProxy: NetProxy.option(),
+        connectTimeout: 15000,
+        readTimeout: 20000
+      };
+      const resp = await req.request(url, opt);
+      req.destroy();
+      if (resp.responseCode >= 200 && resp.responseCode < 400) {
+        const data = resp.result as string;
+        return data ? data : '';
+      }
+      return '';
+    } catch (e) {
+      if (req !== null) {
+        req.destroy();
+      }
+      return '';
+    }
+  }
+
   static absolute(base: string, relative: string): string {
     const m = base.match(/^https?:\/\/[^/]+/i);
     const origin = m !== null ? m[0] : '';
@@ -1008,19 +1052,27 @@ export class TikTokService {
   }
 }
 
-/** Instagram：embed/captioned 通道 + og meta 兜底。 */
+/** Instagram：graphql 免登录通道（主）+ embed/captioned 通道（备）+ og meta 兜底。 */
 export class InstagramService {
+  /** graphql 接口要求的桌面 UA。 */
+  static readonly DESKTOP_UA: string = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
   static isInstagramUrl(url: string): boolean {
     return url.indexOf('instagram.com') >= 0 || url.indexOf('instagr.am') >= 0;
   }
 
   static shortcode(url: string): string {
-    const m = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-    return m !== null ? m[2] : '';
+    // 兼容 /reels/（复数，网页版路径）、/p/、/reel/、/tv/
+    const m = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    return m !== null ? m[1] : '';
   }
 
   static postType(url: string): string {
-    const m = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+    if (url.indexOf('/reels/') >= 0) {
+      return 'reel';
+    }
+    const m = url.match(/\/(p|reel|tv)\//);
     return m !== null ? m[1] : 'p';
   }
 
@@ -1058,15 +1110,41 @@ export class InstagramService {
       return failed;
     }
     failed.message = '没有解析到 Instagram 作品媒体地址';
+    // 通道一（主）：web graphql 免登录接口，2025 年起公开作品的标准获取方式。
+    // 返回 data.xdt_shortcode_media，字段与旧 shortcode_media 完全一致
+    // （display_url / video_url / edge_sidecar_to_children / edge_media_to_caption / owner / dimensions）。
+    const gql = await InstagramService.graphqlParse(code);
+    if (gql.status === ParseStatus.OK && gql.mediaItems.length > 0) {
+      gql.sourceUrl = target;
+      return gql;
+    }
+    // 通道二（备）：embed/captioned 页。注意新版 embed 页的 JSON 已转义塞进
+    // contextJSON（\"shortcode_media\" 形式），需先反转义再配平提取。
     const embedUrl = `https://www.instagram.com/${InstagramService.postType(target)}/${code}/embed/captioned/`;
     const html = await Http.getText(embedUrl, IOS_UA, 'https://www.instagram.com/');
     if (html.length === 0) {
       // instagram.com 在国内网络通常不可达：直连失败时给出明确指引
-      failed.message = 'Instagram 无法直连（该域名在国内网络受限，或作品需登录）。可在「设置 → 网络」配置代理（如 127.0.0.1:7890）并开启「代理下载」后重试，或改用「网页提取」';
+      failed.message = 'Instagram 解析失败（该域名在国内网络受限，或作品需登录）。可在「设置 → 网络」配置代理（如 127.0.0.1:7890）并开启「代理下载」后重试，或改用「网页提取」';
       failed.webFallback = true;
       return failed;
     }
-    const start = html.indexOf('"shortcode_media"');
+    let start = html.indexOf('"shortcode_media"');
+    if (start < 0) {
+      const unescaped = html.split('\\"').join('"');
+      start = unescaped.indexOf('"shortcode_media"');
+      if (start >= 0) {
+        const brace = unescaped.indexOf('{', start);
+        const jsonText = Http.extractBalancedJson(unescaped, brace);
+        if (jsonText.length > 0) {
+          try {
+            const media = JSON.parse(jsonText) as Record<string, Object>;
+            return InstagramService.mapShortcode(media, target);
+          } catch (e) {
+            // 落到 og meta
+          }
+        }
+      }
+    }
     if (start < 0) {
       const og = InstagramService.ogMeta(html, target);
       if (og.status !== ParseStatus.OK) {
@@ -1075,17 +1153,63 @@ export class InstagramService {
       }
       return og;
     }
-    const brace = html.indexOf('{', start);
-    const jsonText = Http.extractBalancedJson(html, brace);
-    if (jsonText.length === 0) {
+    const brace2 = html.indexOf('{', start);
+    const jsonText2 = Http.extractBalancedJson(html, brace2);
+    if (jsonText2.length === 0) {
       return InstagramService.ogMeta(html, target);
     }
     try {
-      const media = JSON.parse(jsonText) as Record<string, Object>;
+      const media = JSON.parse(jsonText2) as Record<string, Object>;
       return InstagramService.mapShortcode(media, target);
     } catch (e) {
       return InstagramService.ogMeta(html, target);
     }
+  }
+
+  /**
+   * web graphql 免登录通道：POST /api/graphql（表单），两个 doc_id 依次尝试
+   * （Instagram 会轮换，任一可用即成功）。需代理环境。
+   */
+  static async graphqlParse(code: string): Promise<ParseResult> {
+    const failed = new ParseResult();
+    failed.platform = Platform.INSTAGRAM;
+    failed.status = ParseStatus.PARSE_FAILED;
+    failed.message = 'graphql 通道无数据';
+    const docIds: string[] = ['10015901848480474', '8845758582119845'];
+    for (const docId of docIds) {
+      const vars = docId === '10015901848480474' ?
+        `{"shortcode":"${code}"}` :
+        `{"shortcode":"${code}","fetch_tagged_user_count":null,"hoisted_comment_id":null,"hoisted_reply_id":null}`;
+      const body = 'variables=' + encodeURIComponent(vars) +
+        '&doc_id=' + docId + '&lsd=AVqbxe3J_YA&server_timestamps=true';
+      const headers: Record<string, string> = {
+        'X-IG-App-ID': '936619743392459',
+        'X-FB-LSD': 'AVqbxe3J_YA',
+        'X-ASBD-ID': '129477',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Sec-Fetch-Site': 'same-origin'
+      };
+      const resp = await Http.postForm('https://www.instagram.com/api/graphql', body, headers,
+        InstagramService.DESKTOP_UA, 'https://www.instagram.com/');
+      if (resp.length === 0) {
+        continue;
+      }
+      try {
+        const root = JSON.parse(resp) as Record<string, Object>;
+        const data = root['data'] as Record<string, Object>;
+        if (data === null || data === undefined) {
+          continue;
+        }
+        const media = data['xdt_shortcode_media'] as Record<string, Object>;
+        if (media === null || media === undefined) {
+          continue;
+        }
+        return InstagramService.mapShortcode(media, '');
+      } catch (e) {
+        continue;
+      }
+    }
+    return failed;
   }
 
   /** 单节点 → 媒体项（SaveAny 同款）：视频优先（display_url 作 poster），带尺寸。 */
