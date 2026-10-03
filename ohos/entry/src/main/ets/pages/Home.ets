@@ -69,20 +69,9 @@ export struct HomePage {
 
   reload(): void {
     const all = AppContainer.get().saved.getAll();
-    // 按源链接去重（保留最新一次保存）——重复解析同一作品不再出现双卡
-    const seen: Record<string, number> = {};
-    const deduped: SavedItem[] = [];
-    for (const it of all) {
-      const key = it.sourceUrl.length > 0 ? it.sourceUrl : it.id;
-      const prev = seen[key];
-      if (prev === undefined) {
-        seen[key] = deduped.length;
-        deduped.push(it);
-      } else if (it.createTime > deduped[prev].createTime) {
-        deduped[prev] = it;
-      }
-    }
-    this.items = deduped;
+    // 按源链接去重（保留最新一次保存）——重复解析同一作品不再出现双卡。
+    // 去重逻辑下沉到 SavedStore，与统计页共用，保证数量一致。
+    this.items = AppContainer.get().saved.dedupeBySource(all);
     this.splitColumns();
     this.measureRatios();
   }

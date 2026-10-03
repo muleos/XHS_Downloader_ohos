@@ -45,6 +45,26 @@ export class SavedStore {
     return this.items;
   }
 
+  /**
+   * 收藏页同款去重：按源链接保留最新一次保存（重复解析同一作品不重复计数）。
+   * 统计页与收藏页共用本方法，保证两边数量一致。
+   */
+  dedupeBySource(items: SavedItem[]): SavedItem[] {
+    const seen: Record<string, number> = {};
+    const deduped: SavedItem[] = [];
+    for (const it of items) {
+      const key = it.sourceUrl.length > 0 ? it.sourceUrl : it.id;
+      const prev = seen[key];
+      if (prev === undefined) {
+        seen[key] = deduped.length;
+        deduped.push(it);
+      } else if (it.createTime > deduped[prev].createTime) {
+        deduped[prev] = it;
+      }
+    }
+    return deduped;
+  }
+
   byId(id: string): SavedItem | null {
     for (const it of this.items) {
       if (it.id === id) {

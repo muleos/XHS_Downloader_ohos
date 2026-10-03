@@ -55,7 +55,9 @@ struct PlatformStats {
   }
 
   private reload(): void {
-    const items: SavedItem[] = AppContainer.get().saved.getAll();
+    // 与收藏页完全同源同口径：先按源链接去重（保留最新一次保存），再按平台分组
+    const items: SavedItem[] = AppContainer.get().saved.dedupeBySource(
+      AppContainer.get().saved.getAll());
     // 固定顺序：小红书 / 抖音 / Instagram / X；TikTok 有数据才显示
     const order: Platform[] = [Platform.XHS, Platform.DOUYIN, Platform.INSTAGRAM, Platform.X, Platform.TIKTOK];
     const map: Map<Platform, StatRow> = new Map();
