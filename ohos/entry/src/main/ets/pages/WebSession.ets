@@ -1,5 +1,7 @@
 import { webview } from '@kit.ArkWeb';
+import { util } from '@kit.ArkTS';
 import { AppContainer } from '../data/AppContainer';
+import { XhsWebSession } from '../data/WebAccount';
 import { Theme, TitleBar, toast } from '../view/Common';
 
 const XHS_HOME: string = 'https://www.xiaohongshu.com/explore';
@@ -12,6 +14,9 @@ const SESSION_HOST: string = 'www.xiaohongshu.com';
 const DESKTOP_UA: string =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 
+/** 登录状态轮询间隔（安卓 WebViewActivity 同款 1.5s，这里取 2s 省电） */
+const ACCOUNT_POLL_MS: number = 2000;
+
 @Entry
 @Component
 struct WebSession {
@@ -20,6 +25,31 @@ struct WebSession {
   @StorageLink('leftAvoid') leftAvoid: number = 0;
   @StorageLink('rightAvoid') rightAvoid: number = 0;
   controller: webview.WebviewController = new webview.WebviewController();
+  /** rawfile/xhs_account.js 文本（aboutToAppear 读入，安卓 WebViewScreen 同源脚本） */
+  private accountJs: string = '';
+  /** 登录状态轮询句柄 */
+  private pollTimer: number = -1;
+
+  aboutToAppear(): void {
+    // 读取注入脚本（安卓：assets.open("xhs_account.js")）
+    try {
+      const buf = getContext(this).resourceManager.getRawFileContentSync('xhs_account.js');
+      this.accountJs = util.TextDecoder.create('utf-8').decodeToString(buf);
+    } catch (e) {
+      this.accountJs = '';
+    }
+    // 周期轮询登录态：安卓 repeatOnLifecycle(RESUMED) 内每 1.5s evaluateJavascript 同款
+    this.pollTimer = setInterval((): void => {
+      this.refreshAccount();
+    }, ACCOUNT_POLL_MS);
+  }
+
+  aboutToDisappear(): void {
+    if (this.pollTimer !== -1) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = -1;
+    }
+  }
 
   build() {
     Column() {
@@ -49,14 +79,46 @@ struct WebSession {
         .javaScriptAccess(true)
         .domStorageAccess(true)
         .userAgent(DESKTOP_UA)
-        .onControllerAttached(() => {
-          // Attach web cookies into the session store on first sight.
+        .onPageEnd(() => {
+          // 页面加载完成立即抓一次（安卓 onPageFinished 同款）
+          this.refreshAccount();
         })
     }
     .padding({ left: this.leftAvoid, right: this.rightAvoid, top: this.topAvoid, bottom: this.bottomAvoid })
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.pageBg)
+  }
+
+  /**
+   * 执行 xhs_account.js 读取登录用户并写入 WebAccountRepository
+   * （安卓 refreshAccount() 移植：仅可信小红书域名，结果回传 webAccount.update）。
+   */
+  private refreshAccount(): void {
+    if (this.accountJs.length === 0) {
+      return;
+    }
+    let url: string = '';
+    try {
+      url = this.controller.getUrl();
+    } catch (e) {
+      return;
+    }
+    if (!XhsWebSession.isTrusted(url)) {
+      return;
+    }
+    try {
+      this.controller.runJavaScript(this.accountJs).then((raw: string): void => {
+        if (raw === undefined || raw === null || raw.length === 0) {
+          return;
+        }
+        AppContainer.get().webAccount.update(raw);
+      }).catch((): void => {
+        // 页面尚未就绪等场景，等下一轮轮询
+      });
+    } catch (e) {
+      // controller 未附加时忽略
+    }
   }
 
   private extractSession(): void {

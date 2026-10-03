@@ -11,6 +11,7 @@ import { Theme, ToggleRow, SelectorRow, SheetState, OptionSheetOverlay } from '.
 @Entry
 @Component
 struct MediaFormatSettings {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
   /** 选项选择浮层（安卓 Spinner 同款交互） */
   @State sheet: SheetState = new SheetState();
@@ -190,7 +191,7 @@ struct MediaFormatSettings {
             .padding({ left: 8, right: 8, bottom: this.bottomAvoid() + 24 })
           }
           .width('100%')
-          .padding({ left: 12, right: 12, top: 8 })
+          .padding({ left: 12, right: 12, top: this.topAvoid + 88 })
         }
         .scrollBar(BarState.Off)
         .align(Alignment.Top)

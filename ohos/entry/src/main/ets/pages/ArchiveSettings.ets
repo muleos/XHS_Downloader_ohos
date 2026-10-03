@@ -11,6 +11,7 @@ import { Theme, ToggleRow, toast } from '../view/Common';
 @Entry
 @Component
 struct ArchiveSettings {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
   private scroller: Scroller = new Scroller();
 
@@ -125,7 +126,7 @@ struct ArchiveSettings {
             .padding({ left: 8, bottom: (AppStorage.get<number>('bottomAvoid') ?? 0) + 24 })
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 8 })
+        .padding({ left: 12, right: 12, top: this.topAvoid + 88 })
       }
       .scrollBar(BarState.Off)
       .align(Alignment.Top)

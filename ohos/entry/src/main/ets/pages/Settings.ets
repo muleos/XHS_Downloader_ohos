@@ -15,6 +15,7 @@ import { Theme, ToggleRow, SelectorRow, ValueRow, SheetState, OptionSheetOverlay
 @Entry
 @Component
 struct Settings {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
   /** 选项选择浮层（媒体卡片信息等） */
   @State sheet: SheetState = new SheetState();
@@ -241,7 +242,7 @@ struct Settings {
             .padding({ top: 8, bottom: this.bottomPad() })
           }
           .width('100%')
-          .padding({ left: 12, right: 12, top: 8 })
+          .padding({ left: 12, right: 12, top: this.topAvoid + 88 })
         }
         .scrollBar(BarState.Off)
         .width('100%')

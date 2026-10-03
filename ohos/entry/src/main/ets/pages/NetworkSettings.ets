@@ -11,6 +11,7 @@ import { Theme, ToggleRow, SelectorRow, ValueRow, toast } from '../view/Common';
 @Entry
 @Component
 struct NetworkSettings {
+  @StorageLink('topAvoid') topAvoid: number = 0;
   @State settings: AppSettings = new AppSettings();
   private scroller: Scroller = new Scroller();
 
@@ -129,7 +130,7 @@ struct NetworkSettings {
             .padding({ left: 8, bottom: (AppStorage.get<number>('bottomAvoid') ?? 0) + 24 })
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 8 })
+        .padding({ left: 12, right: 12, top: this.topAvoid + 88 })
       }
       .scrollBar(BarState.Off)
       .align(Alignment.Top)
