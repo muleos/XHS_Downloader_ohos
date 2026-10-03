@@ -12,9 +12,9 @@ import { NetProxy } from '../service/PlatformServices';
 import { frostTitleBarStyle } from '../view/FrostScaffold';
 import { Theme, toast } from '../view/Common';
 
-const RELEASES_URL: string = 'https://github.com/muleos/XHS_Downloader_ohos/releases/latest';
-const RELEASES_API: string = 'https://api.github.com/repos/muleos/XHS_Downloader_ohos/releases/latest';
-const REPO_URL: string = 'https://github.com/muleos/XHS_Downloader_ohos';
+const RELEASES_URL: string = 'https://github.com/muleos/collection_ohos/releases/latest';
+const RELEASES_API: string = 'https://api.github.com/repos/muleos/collection_ohos/releases/latest';
+const REPO_URL: string = 'https://github.com/muleos/collection_ohos';
 
 @Component
 export struct MinePage {
@@ -220,7 +220,7 @@ export struct MinePage {
             MineRow({
               symbol: $r('sys.symbol.link'),
               title: 'GitHub 仓库',
-              desc: 'muleos/XHS_Downloader_ohos',
+              desc: 'muleos/collection_ohos',
               onTap: (): void => {
                 this.openUrl(REPO_URL);
               }
