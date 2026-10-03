@@ -4,7 +4,7 @@
  * 底栏一比一移植 VHome MainTab.hdsShell：系统官方悬浮岛 HdsTabs
  * （@kit.UIDesignKit）—— 自带沉浸光感材质、实时模糊、按设备自适应调档，
  * barFloatingStyle 悬浮造型（weibopura 同款：高 56 / 底距 28 / lightColor 主题色）。
- * 页签图标官方 SymbolGlyph 两态染色（未选中黑 / 选中主题红）。
+ * 页签图标官方 SymbolGlyph 两态染色（未选中黑 / 选中主题色 #4169E1）。
  * 查看器打开时底栏整体隐藏（barOpacity 0 modifier 换装）；系统返回先关查看器，不退出应用。
  */
 import { SymbolGlyphModifier } from '@kit.ArkUI';
@@ -19,7 +19,7 @@ const BAR_HEIGHT: number = 56;
 const BAR_BOTTOM_MARGIN: number = 28;
 
 const TAB_LABEL: string[] = ['首页', '解析', '我的'];
-/** 两态同资源（fill 形态），未选中黑 / 选中主题红（VHome 同款策略） */
+/** 两态同资源（fill 形态），未选中黑 / 选中主题色（VHome 同款策略） */
 const TAB_ICON: Resource[] = [
   $r('sys.symbol.house_fill'),
   $r('sys.symbol.link'),
@@ -118,14 +118,14 @@ struct Index {
 
   build() {
     Stack() {
-      // ── 沉浸光感背景层：主题红环境光晕（左主 / 右辅），透过透明 Tabs 透出 ──
+      // ── 沉浸光感背景层：主题蓝环境光晕（左主 / 右辅），透过透明 Tabs 透出 ──
       Column()
         .width(620)
         .height(480)
         .radialGradient({
           center: ['50%', '50%'],
           radius: 310,
-          colors: [['rgba(255,36,66,0.10)', 0], ['rgba(255,36,66,0)', 1]]
+          colors: [['rgba(65,105,225,0.10)', 0], ['rgba(65,105,225,0)', 1]]
         })
         .position({ x: '-16%', y: -170 })
         .hitTestBehavior(HitTestMode.None)
@@ -136,7 +136,7 @@ struct Index {
         .radialGradient({
           center: ['50%', '50%'],
           radius: 270,
-          colors: [['rgba(255,120,90,0.08)', 0], ['rgba(255,120,90,0)', 1]]
+          colors: [['rgba(100,149,237,0.08)', 0], ['rgba(100,149,237,0)', 1]]
         })
         .position({ x: '62%', y: -150 })
         .hitTestBehavior(HitTestMode.None)

@@ -169,7 +169,7 @@ struct NoteDetail {
                     RemoteThumb({ url: this.thumbUrlFor(item), label: this.tagFor(item) })
                     Checkbox()
                       .select(this.selected[index])
-                      .selectedColor(Theme.red)
+                      .selectedColor(Theme.accent)
                       .width(20)
                       .height(20)
                       .onChange((on: boolean) => {
@@ -233,7 +233,7 @@ struct NoteDetail {
         Button($r('app.string.detail_download_to_gallery'), { buttonStyle: ButtonStyleMode.EMPHASIZED })
           .layoutWeight(1)
           .fontSize(13)
-          .backgroundColor(Theme.red)
+          .backgroundColor(Theme.accent)
           .onClick(() => {
             this.saveToGallery();
           })

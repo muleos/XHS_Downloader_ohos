@@ -65,7 +65,7 @@ struct WebSession {
         Button($r('app.string.websession_extract'), { buttonStyle: ButtonStyleMode.EMPHASIZED })
           .height(36)
           .fontSize(13)
-          .backgroundColor(Theme.red)
+          .backgroundColor(Theme.accent)
           .onClick(() => {
             this.extractSession();
           })

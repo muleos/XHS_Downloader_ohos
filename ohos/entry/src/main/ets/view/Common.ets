@@ -3,15 +3,15 @@ import { promptAction, router } from '@kit.ArkUI';
 
 export class Theme {
   static readonly red: string = '#FF2442';
-  /** 应用图标红（主题色）：底栏选中态 / 主操作按钮。 */
-  static readonly accent: string = '#FF2442';
-  static readonly accentLight: string = '#1AFF2442';
+  /** 主题高亮色（v1.24.1 起为皇家蓝 #4169E1）：底栏选中态 / 主操作按钮。 */
+  static readonly accent: string = '#4169E1';
+  static readonly accentLight: string = '#1A4169E1';
   static readonly textPrimary: string = '#E6000000';
   static readonly textSecondary: string = '#99000000';
   static readonly divider: string = '#1A000000';
   static readonly pageBg: string = '#F7F7F7';
   static readonly cardBg: string = '#FFFFFF';
-  static readonly selectedBg: string = '#33FF2442';
+  static readonly selectedBg: string = '#334169E1';
 }
 
 export function toast(message: ResourceStr): void {

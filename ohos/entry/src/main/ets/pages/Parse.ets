@@ -392,7 +392,7 @@ export struct ParsePage {
             '_' + this.taskBatchMode + '_' + this.isTaskSelected(task.id))
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: 96, top: this.topAvoid + 88 })
+        .padding({ left: 16, right: 16, bottom: this.bottomAvoid + 100, top: this.topAvoid + 88 })
       }
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
@@ -419,7 +419,7 @@ export struct ParsePage {
             })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 10 })
+        .padding({ left: 16, right: 16, top: 10, bottom: this.bottomAvoid + 90 })
         .backgroundColor('#F2FFFFFF')
         .backgroundBlurStyle(BlurStyle.Regular)
         .border({ width: 0.5, color: '#33FFFFFF' })
@@ -542,7 +542,7 @@ export struct TaskRow {
         Progress({ value: this.task.progress, total: 100 })
           .width('100%')
           .height(4)
-          .color(Theme.red)
+          .color(Theme.accent)
 
         Row({ space: 8 }) {
           Text(`${this.task.completedFiles}/${this.task.totalFiles}  ${formatSpeed(this.speedBps)}` +
